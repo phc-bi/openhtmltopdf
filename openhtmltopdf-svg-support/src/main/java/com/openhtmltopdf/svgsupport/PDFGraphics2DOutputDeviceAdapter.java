@@ -31,6 +31,11 @@ import com.openhtmltopdf.render.RenderingContext;
 
 public class PDFGraphics2DOutputDeviceAdapter extends AbstractGraphics2D {
 
+	// BEGIN PHC PATCH
+	private static final float POINTS_PER_INCH = 72f;
+	private static final float PIXELS_PER_INCH = 96f;
+	// END PHC PATCH
+
 	private final RenderingContext ctx;
 	private final OutputDevice od;
 	private final Graphics2D g2d2;
@@ -38,6 +43,7 @@ public class PDFGraphics2DOutputDeviceAdapter extends AbstractGraphics2D {
 	private final double y;
 	private final AffineTransform defaultTransform;
 	private final float dotsPerPoint;
+	private final float dotsPerPixel;
 
 	private Color _c = Color.BLACK;
 	private Stroke _stroke;
@@ -52,9 +58,14 @@ public class PDFGraphics2DOutputDeviceAdapter extends AbstractGraphics2D {
 		this.ctx = ctx;
 		this.x = x;
 		this.y = y;
-		this.dotsPerPoint = dotsPerInch / 96f;
+		// BEGIN PHC PATCH
+		this.dotsPerPoint = dotsPerInch / POINTS_PER_INCH;
+		this.dotsPerPixel = dotsPerInch / PIXELS_PER_INCH;
+		// END PHC PATCH
 		
-		AffineTransform scale = AffineTransform.getScaleInstance(dotsPerPoint, dotsPerPoint);
+		// BEGIN PHC PATCH
+		AffineTransform scale = AffineTransform.getScaleInstance(dotsPerPixel, dotsPerPixel);
+		// END PHC PATCH
 		defaultTransform = scale;
 		
 		BufferedImage img = new BufferedImage(BufferedImage.TYPE_INT_ARGB, 1, 1);
@@ -65,7 +76,13 @@ public class PDFGraphics2DOutputDeviceAdapter extends AbstractGraphics2D {
 
 	@Override
 	public Shape getClip() {
-		return od.getRawClip();
+		// BEGIN PHC PATCH
+//		// Need to translate the clip to take into account the x/y for this output.
+//		AffineTransform translation =
+//				AffineTransform.getTranslateInstance(-x/dotsPerPoint, -y/dotsPerPoint);
+//		return translation.createTransformedShape(od.getRawClip());
+		return null; // Having a clip here just confuses things when painting SVG. :-(
+		// END PHC PATCH
 	}
 	
 	@Override
@@ -168,7 +185,9 @@ public class PDFGraphics2DOutputDeviceAdapter extends AbstractGraphics2D {
         od.setPaint(getPaint());
         
         AffineTransform offsetTransform = new AffineTransform(defaultTransform);
-        offsetTransform.translate(this.x / this.dotsPerPoint, this.y / this.dotsPerPoint);
+        // BEGIN PHC PATCH
+        offsetTransform.translate(this.x / this.dotsPerPixel, this.y / this.dotsPerPixel);
+        // END PHC PATCH
         offsetTransform.concatenate(getTransform());
         
         od.saveState();
@@ -185,7 +204,9 @@ public class PDFGraphics2DOutputDeviceAdapter extends AbstractGraphics2D {
         od.setPaint(getPaint());
         
         AffineTransform offsetTransform = new AffineTransform(defaultTransform);
-        offsetTransform.translate(this.x / this.dotsPerPoint, this.y / this.dotsPerPoint);
+        // BEGIN PHC PATCH
+        offsetTransform.translate(this.x / this.dotsPerPixel, this.y / this.dotsPerPixel);
+        // END PHC PATCH
         offsetTransform.concatenate(getTransform());
 
         od.saveState();
@@ -231,7 +252,10 @@ public class PDFGraphics2DOutputDeviceAdapter extends AbstractGraphics2D {
 
 	@Override
 	public Graphics create() {
-		return new PDFGraphics2DOutputDeviceAdapter(ctx, od, x, y, this.dotsPerPoint * 96f);
+		// BEGIN PHC PATCH
+		return new PDFGraphics2DOutputDeviceAdapter(
+				ctx, od, x, y, this.dotsPerPoint * POINTS_PER_INCH);
+		// END PHC PATCH
 	}
 
 	@Override
