@@ -165,7 +165,7 @@ public class CalculatedStyle {
         IdentValue v = getIdent(CSSName.DISPLAY);
         if (v == IdentValue.TABLE_HEADER_GROUP || v == IdentValue.TABLE_ROW_GROUP ||
                 v == IdentValue.TABLE_FOOTER_GROUP || v == IdentValue.TABLE_ROW) {
-            _bordersAllowed = false;
+            _bordersAllowed = isCollapseBorders();
         }
     }
 
