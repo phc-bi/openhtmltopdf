@@ -186,7 +186,7 @@ public class PdfBoxOutputDevice extends AbstractOutputDevice implements OutputDe
         _page = page;
         _pageHeight = height;
 
-        _cp.saveGraphics();
+        saveState();
 
         _transform = new AffineTransform();
         _transform.scale(1.0d / _dotsPerPoint, 1.0d / _dotsPerPoint);
@@ -204,7 +204,7 @@ public class PdfBoxOutputDevice extends AbstractOutputDevice implements OutputDe
     }
 
     public void finishPage() {
-        _cp.restoreGraphics();
+        restoreState();
         _cp.closeContent();
     }
 
@@ -803,8 +803,8 @@ public class PdfBoxOutputDevice extends AbstractOutputDevice implements OutputDe
     }
 
     public void setClip(Shape s) {
-        _cp.restoreGraphics();
-        _cp.saveGraphics();
+        restoreState();
+        saveState();
         if (s != null)
             s = _transform.createTransformedShape(s);
         if (s == null) {
@@ -1312,6 +1312,12 @@ public class PdfBoxOutputDevice extends AbstractOutputDevice implements OutputDe
 
     @Override
     public void restoreState() {
+        // Clear out any locally-cached state that might be no longer valid,
+        // after restoring the graphics context at the PDF level.
+        _oldStroke = null;
+        _fillColor = null;
+        _strokeColor = null;
+        
         _cp.restoreGraphics();
     }
 
