@@ -695,6 +695,10 @@ public class PdfBoxRenderer {
         if (v != null) {
             info.setKeywords(v);
         }
+        v = _outputDevice.getMetadataByName("creator");
+        if (v != null) {
+            info.setCreator(v);
+        }
         
         info.setCreationDate(Calendar.getInstance());
         info.setProducer("openhtmltopdf.com");
