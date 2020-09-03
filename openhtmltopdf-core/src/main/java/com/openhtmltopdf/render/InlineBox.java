@@ -21,9 +21,8 @@ package com.openhtmltopdf.render;
 import java.text.BreakIterator;
 
 import org.w3c.dom.Element;
-import org.w3c.dom.Text;
-
 import com.openhtmltopdf.bidi.BidiSplitter;
+import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.IdentValue;
 import com.openhtmltopdf.css.extend.ContentFunction;
 import com.openhtmltopdf.css.parser.FSFunction;
@@ -34,14 +33,13 @@ import com.openhtmltopdf.layout.LayoutContext;
 import com.openhtmltopdf.layout.Styleable;
 import com.openhtmltopdf.layout.TextUtil;
 import com.openhtmltopdf.layout.WhitespaceStripper;
-import com.openhtmltopdf.render.LineBox.LTRvsRTL;
 
 /**
- * A class which reprsents a portion of an inline element. If an inline element
+ * A class which represents a portion of an inline element. If an inline element
  * does not contain any nested elements, then a single <code>InlineBox</code>
  * object will contain the content for the entire element. Otherwise multiple
  * <code>InlineBox</code> objects will be created corresponding to each
- * discrete chunk of text appearing in the elment. It is not rendered directly
+ * discrete chunk of text appearing in the element. It is not rendered directly
  * (and hence does not extend from {@link Box}), but does play an important
  * role in layout (for example, when calculating min/max widths). Note that it
  * does not contain children. Inline content is stored as a flat list in the
@@ -57,7 +55,15 @@ public class InlineBox implements Styleable {
     private String _originalText;
     private String _text;
     private boolean _removableWhitespace;
+    
+    /**
+     * See {@link #isStartsHere()}
+     */
     private boolean _startsHere;
+    
+    /**
+     * See {@link #isEndsHere()}
+     */
     private boolean _endsHere;
 
     private CalculatedStyle _style;
@@ -73,25 +79,22 @@ public class InlineBox implements Styleable {
 
     private String _pseudoElementOrClass;
 
-    private final Text _textNode;
-
-    public InlineBox(String text, Text textNode) {
+    public InlineBox(String text) {
         _text = text;
         _originalText = text;
-        _textNode = textNode;
     }
 
     private byte _textDirection;
     
     /**
-     * @param direction either LTR or RTL from BidiSplitter interface.
+     * @param direction either LTR or RTL from {@link BidiSplitter} interface.
      */
     public void setTextDirection(byte direction) {
     	this._textDirection = direction;
     }
     
     /**
-     * @return either LTR or RTL from BidiSplitter interface.
+     * @return either LTR or RTL from {@link BidiSplitter} interface.
      */
     public byte getTextDirection() {
     	return this._textDirection;
@@ -119,34 +122,57 @@ public class InlineBox implements Styleable {
         _removableWhitespace = removeableWhitespace;
     }
 
+    /**
+     * The opposite of {@link #isStartsHere()}
+     */
     public boolean isEndsHere() {
         return _endsHere;
     }
 
+    /**
+     * See {@link #isEndsHere()}
+     */
     public void setEndsHere(boolean endsHere) {
         _endsHere = endsHere;
     }
 
+    /**
+     * Whether this is the first InlineBox for a box. For example:
+     * 
+     * <code>[b]one[i]two[/i]three[/b]</code>
+     * 
+     * will create three InlineBox objects and one and two will return
+     * true for isStartsHere.
+     * 
+     * This is used for example to decide whether left margin needs to be applied.
+     */
     public boolean isStartsHere() {
         return _startsHere;
     }
 
+    /**
+     * See {@link #isStartsHere()}
+     */
     public void setStartsHere(boolean startsHere) {
         _startsHere = startsHere;
     }
 
+    @Override
     public CalculatedStyle getStyle() {
         return _style;
     }
 
+    @Override
     public void setStyle(CalculatedStyle style) {
         _style = style;
     }
 
+    @Override
     public Element getElement() {
         return _element;
     }
 
+    @Override
     public void setElement(Element element) {
         _element = element;
     }
@@ -236,7 +262,7 @@ public class InlineBox implements Styleable {
 
     private int calcMinWidthFromWordLength(
             LayoutContext c, int cbWidth, boolean trimLeadingSpace, boolean includeWS) {
-        int spaceWidth = getSpaceWidth(c);
+        int spaceWidth = -1;
 
         int last = 0;
         int current = 0;
@@ -246,6 +272,11 @@ public class InlineBox implements Styleable {
         boolean haveFirstWord = false;
         int firstWord = 0;
         int lastWord = 0;
+        
+        CalculatedStyle style = getStyle();
+        float letterSpacing = style.hasLetterSpacing()
+                ? style.getFloatPropertyProportionalWidth(CSSName.LETTER_SPACING, 0, c)
+                : 0f;
 
         String text = getText(trimLeadingSpace);
         FSTextBreaker breakIterator = Breaker.getLineBreakStream(text, c.getSharedContext());
@@ -253,12 +284,17 @@ public class InlineBox implements Styleable {
         // Breaker should be used
         while ( (current = breakIterator.next()) != BreakIterator.DONE) {
             String currentWord = text.substring(last, current);
+            
+            if (currentWord.length() > 0 && currentWord.charAt(currentWord.length() - 1) == Breaker.SOFT_HYPHEN) {
+                currentWord += '-';
+            }
+            
             int wordWidth = getTextWidth(c, currentWord);
             int minWordWidth;
             if (getStyle().getWordWrap() == IdentValue.BREAK_WORD) {
                 minWordWidth = getMaxCharWidth(c, currentWord);
             } else {
-                minWordWidth = wordWidth;
+                minWordWidth = (int) (wordWidth + (letterSpacing * currentWord.length()));
             }
 
             if (spaceCount > 0) {
@@ -293,6 +329,9 @@ public class InlineBox implements Styleable {
                     break;
                 }
             }
+            if (spaceCount > 0 && spaceWidth == -1) {
+                spaceWidth = getSpaceWidth(c);
+            }
         }
 
         String currentWord = text.substring(last);
@@ -301,7 +340,7 @@ public class InlineBox implements Styleable {
         if (getStyle().getWordWrap() == IdentValue.BREAK_WORD) {
             minWordWidth = getMaxCharWidth(c, currentWord);
         } else {
-            minWordWidth = wordWidth;
+            minWordWidth = (int) (wordWidth + (letterSpacing * currentWord.length()));
         }
         if (spaceCount > 0) {
             if (includeWS) {
@@ -395,6 +434,7 @@ public class InlineBox implements Styleable {
         return _firstLineWidth;
     }
 
+    @Override
     public String getPseudoElementOrClass() {
         return _pseudoElementOrClass;
     }
@@ -403,8 +443,9 @@ public class InlineBox implements Styleable {
         _pseudoElementOrClass = pseudoElementOrClass;
     }
 
+    @Override
     public String toString() {
-        StringBuffer result = new StringBuffer();
+        StringBuilder result = new StringBuilder();
         result.append("InlineBox: ");
         if (getElement() != null) {
             result.append("<");
@@ -437,7 +478,7 @@ public class InlineBox implements Styleable {
         return result.toString();
     }
 
-    protected void appendPositioningInfo(StringBuffer result) {
+    protected void appendPositioningInfo(StringBuilder result) {
         if (getStyle().isRelative()) {
             result.append("(relative) ");
         }
@@ -456,7 +497,7 @@ public class InlineBox implements Styleable {
         if (_text == null) {
             return null;
         } else {
-            StringBuffer result = new StringBuffer();
+            StringBuilder result = new StringBuilder();
             for (int i = 0; i < _text.length() && i < 40; i++) {
                 char c = _text.charAt(i);
                 if (c == '\n') {
@@ -484,22 +525,4 @@ public class InlineBox implements Styleable {
         _text = "";
         _originalText = "";
     }
-
-    public Text getTextNode() {
-        return this._textNode;
-    }
-
-    /**
-     * Counts the RTL chars vs LTR chars in this inline box. This is used by line box to know whether to align right
-     * or left given a predominantly left-to-right line or a predominantly right-to-left line.
-     * @param result
-     */
-	public void countRtlVsLtrChars(LTRvsRTL result) {
-		if (getTextDirection() == BidiSplitter.LTR) {
-			result.ltr += _text.length();
-		}
-		else {
-			result.rtl += _text.length();
-		}
-	}
 }

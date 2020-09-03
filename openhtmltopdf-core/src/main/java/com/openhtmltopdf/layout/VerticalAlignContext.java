@@ -36,7 +36,7 @@ import com.openhtmltopdf.render.InlineLayoutBox;
  * must be taken into consideration when aligning content.
  */
 public class VerticalAlignContext {
-    private List _measurements = new ArrayList();
+    private final List<InlineBoxMeasurements> _measurements = new ArrayList<>();
     
     private int _inlineTop;
     private boolean _inlineTopSet = false;
@@ -50,7 +50,7 @@ public class VerticalAlignContext {
     private int _paintingBottom;
     private boolean _paintingBottomSet = false;
     
-    private List _children = new ArrayList();
+    private List<ChildContextData> _children = new ArrayList<>();
     
     private VerticalAlignContext _parent = null;
     
@@ -123,7 +123,7 @@ public class VerticalAlignContext {
     }
     
     public InlineBoxMeasurements getParentMeasurements() {
-        return (InlineBoxMeasurements)_measurements.get(_measurements.size()-1);
+        return _measurements.get(_measurements.size() - 1);
     }
     
     public void popMeasurements() {
@@ -145,11 +145,11 @@ public class VerticalAlignContext {
         
         result.setParent(vaRoot);
         
-        InlineBoxMeasurements initial = (InlineBoxMeasurements)vaRoot._measurements.get(0);
+        InlineBoxMeasurements initial = vaRoot._measurements.get(0);
         result.pushMeasurements(initial);
         
         if (vaRoot._children == null) {
-            vaRoot._children = new ArrayList();
+            vaRoot._children = new ArrayList<>();
         }
         
         vaRoot._children.add(new ChildContextData(root, result));
@@ -157,8 +157,8 @@ public class VerticalAlignContext {
         return result;
     }
     
-    public List getChildren() {
-        return _children == null ? Collections.EMPTY_LIST : _children;
+    public List<ChildContextData> getChildren() {
+        return _children == null ? Collections.emptyList() : _children;
     }
 
     public VerticalAlignContext getParent() {
@@ -183,9 +183,9 @@ public class VerticalAlignContext {
     }
     
     public void alignChildren() {
-        List children = getChildren();
+        List<ChildContextData> children = getChildren();
         for (int i = 0; i < children.size(); i++) {
-            ChildContextData data = (ChildContextData)children.get(i);
+            ChildContextData data = children.get(i);
             data.align();
             merge(data.getVerticalAlignContext());
         }
@@ -196,32 +196,16 @@ public class VerticalAlignContext {
     }
     
     private static final class ChildContextData {
-        private Box _root;
-        private VerticalAlignContext _verticalAlignContext;
-        
-        
-        public ChildContextData() {
-        }
+        private final Box _root;
+        private final VerticalAlignContext _verticalAlignContext;
         
         public ChildContextData(Box root, VerticalAlignContext vaContext) {
             _root = root;
             _verticalAlignContext = vaContext;
         }
         
-        public Box getRoot() {
-            return _root;
-        }
-        
-        public void setRoot(Box root) {
-            _root = root;
-        }
-        
         public VerticalAlignContext getVerticalAlignContext() {
             return _verticalAlignContext;
-        }
-        
-        public void setVerticalAlignContext(VerticalAlignContext verticalAlignContext) {
-            _verticalAlignContext = verticalAlignContext;
         }
         
         private void moveContextContents(int ty) {

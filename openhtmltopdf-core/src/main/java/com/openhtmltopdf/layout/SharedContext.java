@@ -19,43 +19,29 @@
  */
 package com.openhtmltopdf.layout;
 
-import java.awt.Font;
-import java.awt.HeadlessException;
-import java.awt.Rectangle;
-import java.awt.Toolkit;
-import java.text.BreakIterator;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
-
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-
 import com.openhtmltopdf.context.StyleReference;
 import com.openhtmltopdf.css.style.CalculatedStyle;
 import com.openhtmltopdf.css.style.EmptyStyle;
 import com.openhtmltopdf.css.value.FontSpecification;
-import com.openhtmltopdf.extend.FSCanvas;
-import com.openhtmltopdf.extend.FSTextBreaker;
-import com.openhtmltopdf.extend.FSTextTransformer;
-import com.openhtmltopdf.extend.FontContext;
-import com.openhtmltopdf.extend.FontResolver;
-import com.openhtmltopdf.extend.NamespaceHandler;
-import com.openhtmltopdf.extend.ReplacedElementFactory;
-import com.openhtmltopdf.extend.TextRenderer;
-import com.openhtmltopdf.extend.UserAgentCallback;
+import com.openhtmltopdf.extend.*;
 import com.openhtmltopdf.render.Box;
 import com.openhtmltopdf.render.FSFont;
 import com.openhtmltopdf.render.FSFontMetrics;
 import com.openhtmltopdf.render.RenderingContext;
-import com.openhtmltopdf.simple.extend.FormSubmissionListener;
 import com.openhtmltopdf.swing.AWTFontResolver;
-import com.openhtmltopdf.swing.Java2DTextRenderer;
-import com.openhtmltopdf.swing.SwingReplacedElementFactory;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.ThreadCtx;
 import com.openhtmltopdf.util.XRLog;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+
+import java.awt.*;
+import java.text.BreakIterator;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.logging.Level;
 
 /**
  * The SharedContext stores pseudo global variables.
@@ -136,28 +122,11 @@ public class SharedContext {
 	private FSTextTransformer _unicodeToLowerTransformer = new TextUtil.DefaultToLowerTransformer(Locale.US);
 	private FSTextTransformer _unicodeToUpperTransformer = new TextUtil.DefaultToUpperTransformer(Locale.US);
 	private FSTextTransformer _unicodeToTitleTransformer = new TextUtil.DefaultToTitleTransformer();
+
+	public String _preferredTransformerFactoryImplementationClass = null;
+	public String _preferredDocumentBuilderFactoryImplementationClass = null;
     
     public SharedContext() {
-    }
-
-    /**
-     * Constructor for the Context object
-     * @deprecated This stuff should go in the renderers of a specific device.
-     */
-    @Deprecated
-    public SharedContext(UserAgentCallback uac) {
-        fontResolver = new AWTFontResolver();
-        replacedElementFactory = new SwingReplacedElementFactory();
-        setMedia("screen");
-        this.uac = uac;
-        setCss(new StyleReference(uac));
-        XRLog.render("Using CSS implementation from: " + getCss().getClass().getName());
-        setTextRenderer(new Java2DTextRenderer());
-        try {
-            setDPI(Toolkit.getDefaultToolkit().getScreenResolution());
-        } catch (HeadlessException e) {
-            setDPI(DEFAULT_DPI);
-        }
     }
 
 
@@ -172,14 +141,11 @@ public class SharedContext {
         setMedia("screen");
         this.uac = uac;
         setCss(new StyleReference(uac));
-        XRLog.render("Using CSS implementation from: " + getCss().getClass().getName());
+        XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.RENDER_USING_CSS_IMPLEMENTATION_FROM, getCss().getClass().getName());
         setTextRenderer(tr);
         setDPI(dpi);
     }
 
-    public void setFormSubmissionListener(FormSubmissionListener fsl) {
-        replacedElementFactory.setFormSubmissionListener(fsl);
-    }
 
     public LayoutContext newLayoutContextInstance() {
         LayoutContext c = new LayoutContext(this);
@@ -200,10 +166,6 @@ public class SharedContext {
      */
     public FontResolver getFontResolver() {
         return fontResolver;
-    }
-
-    public void flushFonts() {
-        fontResolver.flushCache();
     }
 
     /**
@@ -290,14 +252,14 @@ public class SharedContext {
 
     public void addBoxId(String id, Box box) {
         if (idMap == null) {
-            idMap = new HashMap<String, Box>();
+            idMap = new HashMap<>();
         }
         idMap.put(id, box);
     }
 
     public Box getBoxById(String id) {
         if (idMap == null) {
-            idMap = new HashMap<String, Box>();
+            idMap = new HashMap<>();
         }
         return idMap.get(id);
     }
@@ -524,7 +486,7 @@ public class SharedContext {
 
     public CalculatedStyle getStyle(Element e, boolean restyle) {
         if (styleMap == null) {
-            styleMap = new HashMap<Element, CalculatedStyle>(1024, 0.75f);
+            styleMap = new HashMap<>(1024, 0.75f);
         }
 
         CalculatedStyle result = null;
@@ -548,12 +510,6 @@ public class SharedContext {
         return result;
     }
 
-    public void reset() {
-       styleMap = null;
-       idMap = null;
-       replacedElementFactory.reset();
-    }
-
     public ReplacedElementFactory getReplacedElementFactory() {
         return replacedElementFactory;
     }
@@ -562,41 +518,13 @@ public class SharedContext {
         if (ref == null) {
             throw new NullPointerException("replacedElementFactory may not be null");
         }
-
-        if (this.replacedElementFactory != null) {
-            this.replacedElementFactory.reset();
-        }
         this.replacedElementFactory = ref;
-    }
-
-    public void removeElementReferences(Element e) {
-        String id = namespaceHandler.getID(e);
-        if (id != null && id.length() > 0) {
-            removeBoxId(id);
-        }
-
-        if (styleMap != null) {
-            styleMap.remove(e);
-        }
-
-        getCss().removeStyle(e);
-        getReplacedElementFactory().remove(e);
-
-        if (e.hasChildNodes()) {
-            NodeList children = e.getChildNodes();
-            for (int i = 0; i < children.getLength(); i++) {
-                Node child = children.item(i);
-                if (child.getNodeType() == Node.ELEMENT_NODE) {
-                    removeElementReferences((Element)child);
-                }
-            }
-        }
     }
 
     /**
      * Stores a default page width.
      * @return default page width or null.
-     * @see {@link #isDefaultPageSizeInches()}
+     * @see #isDefaultPageSizeInches()
      */
 	public Float getDefaultPageWidth() {
 		return this.defaultPageWidth;
@@ -605,7 +533,7 @@ public class SharedContext {
     /**
      * Stores a default page height.
      * @return default page height or null.
-     * @see {@link #isDefaultPageSizeInches()}
+     * @see #isDefaultPageSizeInches()
      */
 	public Float getDefaultPageHeight() {
 		return this.defaultPageHeight;
@@ -613,7 +541,7 @@ public class SharedContext {
 	
 	/**
 	 * If not, consider it as mm.
-	 * @return
+	 * @return true if the page size is in inches, false if it is in mm.
 	 */
 	public boolean isDefaultPageSizeInches() {
 		return this.defaultPageSizeIsInches;
@@ -622,7 +550,7 @@ public class SharedContext {
 	/**
 	 * The replacement text to be used if a character cannot be 
 	 * renderered by the current or fallback fonts.
-	 * @return
+	 * @return the current replacement text, "#" by default
 	 */
 	public String getReplacementText() {
 		return this.replacementText;

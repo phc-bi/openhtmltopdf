@@ -20,20 +20,6 @@
  */
 package com.openhtmltopdf.render;
 
-import java.awt.Dimension;
-import java.awt.Rectangle;
-import java.awt.Shape;
-import java.io.IOException;
-import java.io.Writer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.logging.Level;
-
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.IdentValue;
 import com.openhtmltopdf.css.parser.FSColor;
@@ -46,10 +32,26 @@ import com.openhtmltopdf.layout.Layer;
 import com.openhtmltopdf.layout.LayoutContext;
 import com.openhtmltopdf.layout.PaintingInfo;
 import com.openhtmltopdf.layout.Styleable;
-import com.openhtmltopdf.render.LineBox.LTRvsRTL;
+import com.openhtmltopdf.render.FlowingColumnContainerBox.ColumnBreakStore;
+import com.openhtmltopdf.util.LambdaUtil;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
-public abstract class Box implements Styleable {
+import java.awt.*;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Area;
+import java.io.IOException;
+import java.io.Writer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.function.Predicate;
+import java.util.logging.Level;
+
+public abstract class Box implements Styleable, DisplayListItem {
     protected static final String LINE_SEPARATOR = System.getProperty("line.separator");
 
     private Element _element;
@@ -77,7 +79,7 @@ public abstract class Box implements Styleable {
 
     private Box _parent;
 
-    private List _boxes;
+    private List<Box> _boxes;
 
     /**
      * Keeps track of the start of childrens containing block.
@@ -99,17 +101,112 @@ public abstract class Box implements Styleable {
     private String _pseudoElementOrClass;
 
     private boolean _anonymous;
-
+    
+    private Area _absoluteClipBox;
+    private boolean _clipBoxCalculated = false;
+    
+    private Object _accessibilityObject;
+    
     protected Box() {
     }
+    
+    /**
+     * Gets the combined clip of this box relative to the containing layer.
+     * The returned clip is in document coordinate space (not transformed in any way).
+     * For example, if we have the following nesting:
+     *
+     * overflow hidden := transformed box := overflow hidden := overflow hidden := overflow visible
+     * 
+     * this function called on the overflow visible box will return the combined clip of its
+     * two immediate ancestors in document coordinate space. It stops at the transformed box because
+     * the transform triggers a layer.
+     * 
+     * Currently this method is used for getting the clip to apply to a float, which are nested in layers
+     * but taken out of the default block list and therefore clip stack.
+     * 
+     * Since it is only used for floats, the result is not cached. Revisit this decision if using for every box.
+     * 
+     * There are several other clip methods available:
+     * + {@link #getChildrenClipEdge(CssContext)} - gets the local clip for a single box.
+     * + {@link #getParentClipBox(RenderingContext, Layer)} - gets the layer relative clip for the parent box.
+     * + {@link #getAbsoluteClipBox(CssContext)} - gets the absolute clip box in document coordinates
+     */
+    public Rectangle getClipBox(RenderingContext c, Layer layer) {
+        return calcClipBox(c, layer);
+    }
+    
+    private Box getClipParent() {
+        if (getStyle() != null && getStyle().isPositioned()) {
+            return getContainingBlock();
+        } else if (this instanceof BlockBox && 
+                ((BlockBox) this).isFloated()) {
+            return getContainingBlock();
+        } else {
+            return getParent();
+        }
+    }
+    
+    /**
+     * Gets the layer relative clip for the parent box.
+     * @see {@link #getClipBox(RenderingContext, Layer)}
+     */
+    public Rectangle getParentClipBox(RenderingContext c, Layer layer) {
+        Box clipParent = getClipParent();
+        
+        if (clipParent == null || clipParent.getContainingLayer() != layer) {
+            return null;
+        }
+        
+        return clipParent.getClipBox(c, layer);
+    }
+    
+    private Rectangle calcClipBox(RenderingContext c, Layer layer) {
+        if (getContainingLayer() != layer) {
+            return null;
+        } else if (getStyle() != null && getStyle().isIdent(CSSName.OVERFLOW, IdentValue.HIDDEN)) {
+            Rectangle parentClip = getParentClipBox(c, layer);
+            return parentClip != null ? getChildrenClipEdge(c).intersection(parentClip) : getChildrenClipEdge(c);
+        } else {
+            return getParentClipBox(c, layer);
+        }
+    }
+    
+    /**
+     * Returns the absolute (ie transformed if needed) clip area for this box.
+     * Cached as this will be needed on every box to check if the clip area is inside a page. 
+     */
+    public Area getAbsoluteClipBox(CssContext c) {
+        if (!_clipBoxCalculated) {
+            _absoluteClipBox = calcAbsoluteClipBox(c);
+            _clipBoxCalculated = true;
+        }
+        return _absoluteClipBox != null ? (Area) _absoluteClipBox.clone() : null;
+    }
+    
+    private Area calcAbsoluteClipBox(CssContext c) {
+        Rectangle localClip = getStyle() != null && getStyle().isIdent(CSSName.OVERFLOW, IdentValue.HIDDEN) ? getChildrenClipEdge(c) : null;
+        Box parentBox = getClipParent();
+        Area parentClip = parentBox != null ? parentBox.getAbsoluteClipBox(c) : null;
 
+        if (localClip != null) {
+            AffineTransform transform = getContainingLayer().getCurrentTransformMatrix();
+            Area ourClip = new Area(transform != null ? transform.createTransformedShape(localClip) : localClip);
+            if (parentClip != null) {
+                ourClip.intersect(parentClip);
+            }
+            return ourClip;
+        } else {
+            return parentClip;
+        }
+    }
+    
     public abstract String dump(LayoutContext c, String indent, int which);
 
     protected void dumpBoxes(
-            LayoutContext c, String indent, List boxes,
-            int which, StringBuffer result) {
-        for (Iterator i = boxes.iterator(); i.hasNext(); ) {
-            Box b = (Box)i.next();
+            LayoutContext c, String indent, List<Box> boxes,
+            int which, StringBuilder result) {
+        for (Iterator<Box> i = boxes.iterator(); i.hasNext(); ) {
+            Box b = i.next();
             result.append(b.dump(c, indent + "  ", which));
             if (i.hasNext()) {
                 result.append('\n');
@@ -122,7 +219,7 @@ public abstract class Box implements Styleable {
     }
 
     public String toString() {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         sb.append("Box: ");
         sb.append(" (" + getAbsX() + "," + getAbsY() + ")->(" + getWidth() + " x " + getHeight() + ")");
         return sb.toString();
@@ -136,7 +233,7 @@ public abstract class Box implements Styleable {
 
     public void addChild(Box child) {
         if (_boxes == null) {
-            _boxes = new ArrayList();
+            _boxes = new ArrayList<>();
         }
         if (child == null) {
             throw new NullPointerException("trying to add null child");
@@ -146,9 +243,8 @@ public abstract class Box implements Styleable {
         _boxes.add(child);
     }
 
-    public void addAllChildren(List children) {
-        for (Iterator i = children.iterator(); i.hasNext(); ) {
-            Box box = (Box)i.next();
+    public void addAllChildren(List<Box> children) {
+        for (Box box : children) {
             addChild(box);
         }
     }
@@ -162,8 +258,8 @@ public abstract class Box implements Styleable {
     public void removeChild(Box target) {
         if (_boxes != null) {
             boolean found = false;
-            for (Iterator i = getChildIterator(); i.hasNext(); ) {
-                Box child = (Box)i.next();
+            for (Iterator<Box> i = getChildIterator(); i.hasNext(); ) {
+                Box child = i.next();
                 if (child.equals(target)) {
                     i.remove();
                     found = true;
@@ -222,12 +318,53 @@ public abstract class Box implements Styleable {
         }
     }
 
-    public Iterator getChildIterator() {
-        return _boxes == null ? Collections.EMPTY_LIST.iterator() : _boxes.iterator();
+    public Iterator<Box> getChildIterator() {
+        return (_boxes == null ? Collections.emptyIterator() : _boxes.iterator());
     }
 
-    public List getChildren() {
-        return _boxes == null ? Collections.EMPTY_LIST : _boxes;
+    public List<Box> getChildren() {
+        return _boxes == null ? Collections.emptyList() : _boxes;
+    }
+    
+    public static class ChildIteratorOfType<T> implements Iterator<T>  {
+        private final Iterator<Box> iter;
+        private final Class<T> type;
+        
+        private ChildIteratorOfType(Iterator<Box> parent, Class<T> clazz) {
+            this.iter = parent;
+            this.type = clazz;
+        }
+        
+        @Override
+        public boolean hasNext() {
+            return this.iter.hasNext();
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public T next() {
+            Box box = this.iter.next();
+            
+            if (this.type.isAssignableFrom(box.getClass())) {
+                return (T) box;
+            }
+
+            XRLog.log(Level.SEVERE, LogMessageId.LogMessageId2Param.GENERAL_EXPECTING_BOX_CHILDREN_OF_TYPE_BUT_GOT,
+                    this.type.getCanonicalName(), box.getClass().getCanonicalName());
+            return null;
+        }
+    }
+    
+    /**
+     * Returns an iterator of boxes cast to type.
+     * If a box is not of type, an error will be logged and 
+     * null will be returned for that box.
+     * Therefore, this method should only be used when it is certain
+     * all children are of a particular type.
+     * Eg: TableBox has children only of type TableSectionBox.
+     */
+    public <T> Iterator<T> getChildIteratorOfType(Class<T> type) {
+        return new ChildIteratorOfType<>(getChildIterator(), type);
     }
 
     public static final int NOTHING = 0;
@@ -304,15 +441,23 @@ public abstract class Box implements Styleable {
         return getPaintingBorderEdge(cssCtx);
     }
 
-    public Rectangle getChildrenClipEdge(RenderingContext c) {
+    public Rectangle getChildrenClipEdge(CssContext c) {
         return getPaintingPaddingEdge(c);
     }
 
     /**
      * <B>NOTE</B>: This method does not consider any children of this box
+     * but does consider the transformation matrix of the containing layer.
      */
     public boolean intersects(CssContext cssCtx, Shape clip) {
-        return clip == null || clip.intersects(getPaintingClipEdge(cssCtx));
+    	AffineTransform ctm = this.getContainingLayer().getCurrentTransformMatrix();
+    	
+    	if (ctm == null || clip == null) {
+    		return clip == null || clip.intersects(getPaintingClipEdge(cssCtx));
+    	} else {
+    		Shape boxShape = ctm.createTransformedShape(getPaintingClipEdge(cssCtx));
+    		return clip.intersects(boxShape.getBounds2D());
+    	}
     }
 
     public Rectangle getBorderEdge(int left, int top, CssContext cssCtx) {
@@ -438,6 +583,30 @@ public abstract class Box implements Styleable {
             c.getOutputDevice().paintBackground(c, this);
         }
     }
+    
+    public boolean hasNonTextContent(CssContext c) {
+        if (getStyle().getBackgroundColor() != null && getStyle().getBackgroundColor() != FSRGBColor.TRANSPARENT) {
+            return true;
+        } else if (!getStyle().isIdent(CSSName.BACKGROUND_IMAGE, IdentValue.NONE)) {
+            return true;
+        } else {
+            BorderPropertySet border = this.getBorder(c);
+            
+            if (!border.isAllZeros()) {
+                return true; 
+            }
+        }
+        
+        return false;
+    }
+    
+    public void setAccessiblityObject(Object object) {
+        this._accessibilityObject = object;
+    }
+    
+    public Object getAccessibilityObject() {
+        return this._accessibilityObject;
+    }
 
     public void paintRootElementBackground(RenderingContext c) {
         PaintingInfo pI = getPaintingInfo();
@@ -456,6 +625,20 @@ public abstract class Box implements Styleable {
         Rectangle canvasBounds = new Rectangle(0, 0, marginCorner.width, marginCorner.height);
         canvasBounds.add(c.getViewportRectangle());
         c.getOutputDevice().paintBackground(c, getStyle(), canvasBounds, canvasBounds, BorderPropertySet.EMPTY_BORDER);
+    }
+    
+    /**
+     * If the html or body box have a background return true.
+     */
+    public boolean hasRootElementBackground(RenderingContext c) {
+    	if (getStyle().isHasBackground()) {
+    		return true;
+    	} else if (getChildCount() > 0 &&
+    			   getChild(0).getStyle().isHasBackground()) {
+    		return true;
+    	}
+    	
+    	return false;
     }
 
     public Layer getContainingLayer() {
@@ -480,7 +663,7 @@ public abstract class Box implements Styleable {
             // directly wrapped by an inline relative layer (i.e. block boxes sandwiched
             // between anonymous block boxes)
             if (c.getLayer().isInline()) {
-                List content =
+                List<Box> content =
                     ((InlineLayoutBox)c.getLayer().getMaster()).getElementWithContent();
                 if (content.contains(this)) {
                     setContainingLayer(c.getLayer());
@@ -498,8 +681,8 @@ public abstract class Box implements Styleable {
         }
     }
 
-    public List getElementBoxes(Element elem) {
-        List result = new ArrayList();
+    public List<Box> getElementBoxes(Element elem) {
+        List<Box> result = new ArrayList<>();
         for (int i = 0; i < getChildCount(); i++) {
             Box child = getChild(i);
             if (child.getElement() == elem) {
@@ -575,7 +758,7 @@ public abstract class Box implements Styleable {
     public int forcePageBreakBefore(LayoutContext c, IdentValue pageBreakValue, boolean pendingPageName) {
         PageBox page = c.getRootLayer().getFirstPage(c, this);
         if (page == null) {
-            XRLog.layout(Level.WARNING, "Box has no page");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.LAYOUT_BOX_HAS_NO_PAGE);
             return 0;
         } else {
             int pageBreakCount = 1;
@@ -606,10 +789,10 @@ public abstract class Box implements Styleable {
             }
 
             if (pageBreakCount == 2) {
-                page = (PageBox)c.getRootLayer().getPages().get(page.getPageNo()+1);
+                page = c.getRootLayer().getPages().get(page.getPageNo()+1);
                 delta += page.getContentHeight(c);
 
-                if (pageBreakCount == 2 && pendingPageName) {
+                if (pendingPageName) {
                     c.setPageName(c.getPendingPageName());
                 }
 
@@ -642,7 +825,7 @@ public abstract class Box implements Styleable {
             }
 
             if (needSecondPageBreak) {
-                page = (PageBox)c.getRootLayer().getPages().get(page.getPageNo()+1);
+                page = c.getRootLayer().getPages().get(page.getPageNo()+1);
                 delta += page.getContentHeight(c);
 
                 if (page == c.getRootLayer().getLastPage()) {
@@ -765,20 +948,6 @@ public abstract class Box implements Styleable {
             RectPropertySet styleMargin = getStyleMargin(cssContext);
 
             _workingMargin.setTop(styleMargin.top());
-        }
-    }
-
-    public void clearSelection(List modified) {
-        for (int i = 0; i < getChildCount(); i++) {
-            Box child = getChild(i);
-            child.clearSelection(modified);
-        }
-    }
-
-    public void selectAll() {
-        for (int i = 0; i < getChildCount(); i++) {
-            Box child = getChild(i);
-            child.selectAll();
         }
     }
 
@@ -959,12 +1128,44 @@ public abstract class Box implements Styleable {
         return _leftMBP;
     }
 
+    /**
+     * Uh oh! This refers to content height during layout but total height after layout!
+     */
     public void setHeight(int height) {
         _height = height;
     }
 
+    /**
+     * Uh oh! This refers to content height during layout but total height after layout!
+     */
     public int getHeight() {
         return _height;
+    }
+    
+    protected void setBorderBoxHeight(CssContext c, int h) {
+        BorderPropertySet border = getBorder(c);
+        RectPropertySet padding = getPadding(c);
+        setHeight((int) Math.max(0f, h - border.height() - padding.height()));
+    }
+    
+    protected int getBorderBoxHeight(CssContext c) {
+        BorderPropertySet border = getBorder(c);
+        RectPropertySet padding = getPadding(c);
+        return (int) (getHeight() + border.height() + padding.height());
+    }
+    
+    /**
+     * Only to be called after layout, due to double use of getHeight().
+     */
+    public Rectangle getBorderBox(CssContext c) {
+        RectPropertySet margin = getMargin(c);
+
+        int w = getBorderBoxWidth(c);
+        int h = getHeight() - (int) margin.top() - (int) margin.bottom();
+        int x = getAbsX() + (int) margin.left();
+        int y = getAbsY() + (int) margin.top();
+        
+        return new Rectangle(x, y, w, h);
     }
 
     public void setContentWidth(int contentWidth) {
@@ -973,6 +1174,18 @@ public abstract class Box implements Styleable {
 
     public int getContentWidth() {
         return _contentWidth;
+    }
+    
+    public int getBorderBoxWidth(CssContext c) {
+        BorderPropertySet border = getBorder(c);
+        RectPropertySet padding = getPadding(c);
+        return (int) (getContentWidth() + border.width() + padding.width());
+    }
+    
+    public void setBorderBoxWidth(CssContext c, int borderBoxWidth) {
+        BorderPropertySet border = getBorder(c);
+        RectPropertySet padding = getPadding(c);
+        setContentWidth((int) (borderBoxWidth - border.width() - padding.width()));
     }
 
     public PaintingInfo getPaintingInfo() {
@@ -1009,22 +1222,22 @@ public abstract class Box implements Styleable {
         setHeight(dimensions.getHeight());
     }
 
-    public void collectText(RenderingContext c, StringBuffer buffer) throws IOException {
-        for (Iterator i = getChildIterator(); i.hasNext(); ) {
-            Box b = (Box)i.next();
+    public void collectText(RenderingContext c, StringBuilder buffer) {
+        for (Box b : getChildren()) {
             b.collectText(c, buffer);
         }
     }
 
     public void exportText(RenderingContext c, Writer writer) throws IOException {
         if (c.isPrint() && isRoot()) {
-            c.setPage(0, (PageBox)c.getRootLayer().getPages().get(0));
+            c.setPage(0, c.getRootLayer().getPages().get(0));
             c.getPage().exportLeadingText(c, writer);
         }
-        for (Iterator i = getChildIterator(); i.hasNext(); ) {
-            Box b = (Box)i.next();
+
+        for (Box b : getChildren()) {
             b.exportText(c, writer);
         }
+        
         if (c.isPrint() && isRoot()) {
             exportPageBoxText(c, writer);
         }
@@ -1033,9 +1246,9 @@ public abstract class Box implements Styleable {
     private void exportPageBoxText(RenderingContext c, Writer writer) throws IOException {
         c.getPage().exportTrailingText(c, writer);
         if (c.getPage() != c.getRootLayer().getLastPage()) {
-            List pages = c.getRootLayer().getPages();
+            List<PageBox> pages = c.getRootLayer().getPages();
             do {
-                PageBox next = (PageBox)pages.get(c.getPageNo()+1);
+                PageBox next = pages.get(c.getPageNo()+1);
                 c.setPage(next.getPageNo(), next);
                 next.exportLeadingText(c, writer);
                 next.exportTrailingText(c, writer);
@@ -1045,36 +1258,26 @@ public abstract class Box implements Styleable {
 
     protected void exportPageBoxText(RenderingContext c, Writer writer, int yPos) throws IOException {
         c.getPage().exportTrailingText(c, writer);
-        List pages = c.getRootLayer().getPages();
-        PageBox next = (PageBox)pages.get(c.getPageNo()+1);
+        List<PageBox> pages = c.getRootLayer().getPages();
+        PageBox next = pages.get(c.getPageNo()+1);
         c.setPage(next.getPageNo(), next);
         while (next.getBottom() < yPos) {
             next.exportLeadingText(c, writer);
             next.exportTrailingText(c, writer);
-            next = (PageBox)pages.get(c.getPageNo()+1);
+            next = pages.get(c.getPageNo()+1);
             c.setPage(next.getPageNo(), next);
         }
         next.exportLeadingText(c, writer);
     }
 
     public boolean isInDocumentFlow() {
-        Box flowRoot = this;
-        while (true) {
-            Box parent = flowRoot.getParent();
-            if (parent == null) {
-                break;
-            } else {
-                flowRoot = parent;
-            }
-        }
-
+        Box flowRoot = rootBox();
         return flowRoot.isRoot();
     }
 
     public void analyzePageBreaks(LayoutContext c, ContentLimitContainer container) {
         container.updateTop(c, getAbsY());
-        for (Iterator i = getChildIterator(); i.hasNext(); ) {
-            Box b = (Box)i.next();
+        for (Box b : getChildren()) {
             b.analyzePageBreaks(c, container);
         }
         container.updateBottom(c, getAbsY() + getHeight());
@@ -1106,17 +1309,7 @@ public abstract class Box implements Styleable {
     }
 
     public boolean isContainedInMarginBox() {
-        Box current = this;
-        while (true) {
-            Box parent = current.getParent();
-            if (parent == null) {
-                break;
-            } else {
-                current = parent;
-            }
-        }
-
-        return current.isMarginAreaRoot();
+        return rootBox().isMarginAreaRoot();
     }
 
     public int getEffectiveWidth() {
@@ -1128,15 +1321,89 @@ public abstract class Box implements Styleable {
     }
 
     /**
-     * Counts the RTL chars vs LTR chars in this box. This is used by line box to know whether to align right
-     * or left given a predominantly left-to-right line or a predominantly right-to-left line.
-     * @param result
+     * Is this box the first child of its parent?
      */
-	public void countRtlVsLtrChars(LTRvsRTL result) {
-		for (int i = 0; i < getChildCount(); i++) {
-			getChild(i).countRtlVsLtrChars(result);
-		}
-	}
+    public boolean isFirstChild() {
+        return getParent() != null &&
+               getParent().getChildCount() > 0 &&
+               getParent().getChild(0) == this;
+    }
+    
+    /**
+     * Is this box unbreakable in regards to column break opportunities?
+     */
+    public boolean isTerminalColumnBreak() {
+        return getChildCount() == 0;
+    }
+    
+    /**
+     * Creates a list of ancestors by walking up the chain of parent,
+     * grandparent, etc. Stops when the provided predicate returns false
+     * or the root box otherwise.
+     */
+    public List<Box> ancestorsWhile(Predicate<Box> predicate) {
+        List<Box> ancestors = new ArrayList<>(4);
+        Box parent = this.getParent();
+        
+        while (parent != null && predicate.test(parent)) {
+            ancestors.add(parent);
+            parent = parent.getParent();
+        }
+        
+        return ancestors;
+    }
+    
+    /**
+     * Get all ancestors, up until the root box.
+     */
+    public List<Box> ancestors() {
+        return ancestorsWhile(LambdaUtil.alwaysTrue());
+    }
+    
+    /**
+     * Walks up the ancestor tree to the root testing ancestors agains
+     * the predicate.
+     * NOTE: Does not test against the current box (this).
+     * @return the box for which predicate returned true or null if none found.
+     */
+    public Box findAncestor(Predicate<Box> predicate) {
+        Box parent = getParent();
+        
+        while (parent != null && !predicate.test(parent)) {
+            parent = parent.getParent();
+        }
+        
+        return parent;
+    }
+    
+    /**
+     * Returns the highest ancestor box. May be current box (this).
+     */
+    public Box rootBox() {
+        return this.getParent() != null ? findAncestor(bx -> bx.getParent() == null) : this;
+    }
+
+    /**
+     * Recursive method to find column break opportunities.
+     * @param store - use to report break opportunities.
+     */
+    public void findColumnBreakOpportunities(ColumnBreakStore store) {
+        if (this.isTerminalColumnBreak() && this.isFirstChild()) {
+            // We report unprocessed ancestor container boxes so that they
+            // can be moved with the first child.
+            List<Box> ancestors = this.ancestorsWhile(store::checkContainerShouldProcess);
+            store.addBreak(this, ancestors);
+        } else if (this.isTerminalColumnBreak()) {
+            store.addBreak(this, null);
+        } else {
+            // This must be a container box so don't add it as a break opportunity.
+            // Recursively query children for their break opportunities.
+            for (Box child : getChildren()) {
+                child.findColumnBreakOpportunities(store);
+            }
+        }
+    }
+
 }
 
 /*

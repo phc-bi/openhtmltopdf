@@ -21,15 +21,15 @@ package com.openhtmltopdf.css.style.derived;
 
 import java.util.logging.Level;
 
-import org.w3c.dom.css.CSSPrimitiveValue;
-
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.ValueConstants;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
 import com.openhtmltopdf.css.parser.PropertyValue;
 import com.openhtmltopdf.css.style.CalculatedStyle;
 import com.openhtmltopdf.css.style.CssContext;
 import com.openhtmltopdf.css.style.DerivedValue;
 import com.openhtmltopdf.css.value.FontSpecification;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
 
 public class LengthValue extends DerivedValue {
@@ -58,6 +58,7 @@ public class LengthValue extends DerivedValue {
         _lengthPrimitiveType = value.getPrimitiveType();
     }
 
+    @Override
     public float asFloat() {
         return _lengthAsFloat;
     }
@@ -72,6 +73,7 @@ public class LengthValue extends DerivedValue {
      * @param ctx
      * @return the absolute value or computed absolute value
      */
+    @Override
     public float getFloatProportionalTo(CSSName cssName,
                                         float baseValue,
                                         CssContext ctx) {
@@ -84,10 +86,12 @@ public class LengthValue extends DerivedValue {
                 ctx);
     }
 
+    @Override
     public boolean hasAbsoluteUnit() {
         return ValueConstants.isAbsoluteUnit(getCssSacUnitType());
     }
     
+    @Override
     public boolean isDependentOnFontSize() {
         return _lengthPrimitiveType == CSSPrimitiveValue.CSS_EXS ||
                     _lengthPrimitiveType == CSSPrimitiveValue.CSS_EMS;
@@ -141,6 +145,19 @@ public class LengthValue extends DerivedValue {
                 }
 
                 break;
+            case CSSPrimitiveValue.CSS_REMS: {
+                // The rem unit is the same as em except uses the font-size of the html element
+                // rather than the font-size of current/parent element.
+                CalculatedStyle htmlTagStyle = ctx.getCss().getRootElementStyle();
+                if (htmlTagStyle == null) {
+                    // The default font-size for the html tag is 16px.
+                    absVal = relVal * 16f * ctx.getDotsPerPixel();
+                } else {
+                   FontSpecification htmlTagFontSpecification = htmlTagStyle.getFont(ctx);
+                   absVal = relVal * htmlTagFontSpecification.size;
+                }
+                break;
+            }
             case CSSPrimitiveValue.CSS_EXS:
                 // To convert EMS to pixels, we need the height of the lowercase 'Xx' character in the current
                 // element...
@@ -176,28 +193,20 @@ public class LengthValue extends DerivedValue {
                 break;
             default:
                 // nothing to do, we only convert those listed above
-                XRLog.cascade(Level.SEVERE,
-                        "Asked to convert " + cssName + " from relative to absolute, " +
-                        " don't recognize the datatype " +
-                        "'" + ValueConstants.stringForSACPrimitiveType(primitiveType) + "' "
-                        + primitiveType + "(" + stringValue + ")");
+                XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.CASCADE_UNKNOWN_DATATYPE_FOR_RELATIVE_TO_ABSOLUTE, cssName, ValueConstants.stringForSACPrimitiveType(primitiveType), primitiveType, stringValue);
         }
         //assert (new Float(absVal).intValue() >= 0);
 
         if (XRLog.isLoggingEnabled()) {
             if (cssName == CSSName.FONT_SIZE) {
-                XRLog.cascade(Level.FINEST, cssName + ", relative= " +
-                        relVal + " (" + stringValue + "), absolute= "
-                        + absVal);
+                XRLog.log(Level.FINEST, LogMessageId.LogMessageId4Param.CASCADE_CALC_FLOAT_PROPORTIONAL_VALUE_INFO_FONT_SIZE, cssName, relVal, stringValue, absVal);
             } else {
-                XRLog.cascade(Level.FINEST, cssName + ", relative= " +
-                        relVal + " (" + stringValue + "), absolute= "
-                        + absVal + " using base=" + baseValue);
+                XRLog.log(Level.FINEST, LogMessageId.LogMessageId5Param.CASCADE_CALC_FLOAT_PROPORTIONAL_VALUE_INFO, cssName, relVal, stringValue, absVal, baseValue);
             }
         }
 
         double d = Math.round((double) absVal);
-        absVal = new Float(d).floatValue();
+        absVal = (float)d;
         return absVal;
     }
     

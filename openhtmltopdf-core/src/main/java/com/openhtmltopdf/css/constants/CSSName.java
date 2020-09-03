@@ -20,11 +20,12 @@
  */
 package com.openhtmltopdf.css.constants;
 
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Objects;
+import java.util.logging.Level;
 
-import com.openhtmltopdf.css.parser.CSSErrorHandler;
 import com.openhtmltopdf.css.parser.CSSParser;
 import com.openhtmltopdf.css.parser.PropertyValue;
 import com.openhtmltopdf.css.parser.property.BackgroundPropertyBuilder;
@@ -42,6 +43,7 @@ import com.openhtmltopdf.css.parser.property.SizePropertyBuilder;
 import com.openhtmltopdf.css.sheet.StylesheetInfo;
 import com.openhtmltopdf.css.style.FSDerivedValue;
 import com.openhtmltopdf.css.style.derived.DerivedValueFactory;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
 
 
@@ -55,26 +57,26 @@ import com.openhtmltopdf.util.XRLog;
  *
  * @author Patrick Wright
  */
-public final class CSSName implements Comparable {
+public final class CSSName implements Comparable<CSSName> {
     /**
      * marker var, used for initialization
      */
-    private static final Integer PRIMITIVE = new Integer(0);
+    private static final Integer PRIMITIVE = Integer.valueOf(0);
 
     /**
      * marker var, used for initialization
      */
-    private static final Integer SHORTHAND = new Integer(1);
+    private static final Integer SHORTHAND = Integer.valueOf(1);
 
     /**
      * marker var, used for initialization
      */
-    private static final Integer INHERITS = new Integer(2);
+    private static final Integer INHERITS = Integer.valueOf(2);
 
     /**
      * marker var, used for initialization
      */
-    private static final Integer NOT_INHERITED = new Integer(3);
+    private static final Integer NOT_INHERITED = Integer.valueOf(3);
 
     /**
      * Used to assing unique int id values to new CSSNames created in this class
@@ -115,12 +117,12 @@ public final class CSSName implements Comparable {
     /**
      * Map of all CSS properties
      */
-    private static final Map ALL_PROPERTY_NAMES = new TreeMap();
+    private static final Map<String, CSSName> ALL_PROPERTY_NAMES = new HashMap<>();
 
     /**
      * Map of all non-shorthand CSS properties
      */
-    private static final Map ALL_PRIMITIVE_PROPERTY_NAMES = new TreeMap();
+    private static final Map<String, CSSName> ALL_PRIMITIVE_PROPERTY_NAMES = new HashMap<>();
 
     /**
      * Unique CSSName instance for CSS2 property.
@@ -419,6 +421,29 @@ public final class CSSName implements Comparable {
             );
 
     /**
+     * The max extra spacing for space characters when text-align: justify is in use.
+     */
+    public final static CSSName FS_MAX_JUSTIFICATION_INTER_WORD =
+            addProperty(
+                    "-fs-max-justification-inter-word",
+                    PRIMITIVE,
+                    "2cm",
+                    INHERITS,
+                    new PrimitivePropertyBuilders.FSMaxJustificationInterWord()
+            );
+    /**
+     * The max extra spacing for non-space characters when text-align: justify is in use.
+     */
+    public final static CSSName FS_MAX_JUSTIFICATION_INTER_CHAR =
+            addProperty(
+                    "-fs-max-justification-inter-char",
+                    PRIMITIVE,
+                    "0.5mm",
+                    INHERITS,
+                    new PrimitivePropertyBuilders.FSMaxJustificationInterChar()
+            );
+    
+    /**
      * Unique CSSName instance for CSS2 property.
      */
     public final static CSSName BOTTOM =
@@ -465,6 +490,24 @@ public final class CSSName implements Comparable {
                     NOT_INHERITED,
                     false,
                     null
+            );
+    
+    public final static CSSName COLUMN_COUNT =
+            addProperty(
+                    "column-count",
+                    PRIMITIVE,
+                    "auto",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.ColumnCount()
+            );
+    
+    public final static CSSName COLUMN_GAP =
+            addProperty(
+                    "column-gap",
+                    PRIMITIVE,
+                    "normal",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.ColumnGap()
             );
 
     /**
@@ -527,8 +570,8 @@ public final class CSSName implements Comparable {
                     PRIMITIVE,
                     "ltr",
                     INHERITS,
-                    false,
-                    null
+                    true,
+                    new PrimitivePropertyBuilders.Direction()
             );
 
     /**
@@ -897,6 +940,24 @@ public final class CSSName implements Comparable {
                     INHERITS,
                     new PrimitivePropertyBuilders.PageBreakInside()
             );
+    
+    public final static CSSName BREAK_AFTER =
+            addProperty(
+                    "break-after",
+                    PRIMITIVE,
+                    "auto",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.BreakAfter()
+            );
+    
+    public final static CSSName BREAK_BEFORE =
+            addProperty(
+                    "break-before",
+                    PRIMITIVE,
+                    "auto",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.BreakBefore()
+            );
 
     /**
      * Unique CSSName instance for CSS2 property.
@@ -1118,6 +1179,38 @@ public final class CSSName implements Comparable {
                     new PrimitivePropertyBuilders.Width()
             );
 
+    /**
+     * Unique CSSName instance for CSS3 property.
+     */
+    public final static CSSName TRANSFORM =
+            addProperty(
+                    "transform",
+                    PRIMITIVE,
+                    "none",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.TransformPropertyBuilder()
+            );
+    
+    public final static CSSName FS_TRANSFORM_ORIGIN_X = 
+    		addProperty(
+    				"-fs-transform-origin-x",
+    				PRIMITIVE,
+    				"50%",
+    				NOT_INHERITED,
+    				new PrimitivePropertyBuilders.TransformOriginX()
+    		);
+
+    public final static CSSName FS_TRANSFORM_ORIGIN_Y = 
+    		addProperty(
+    				"-fs-transform-origin-y",
+    				PRIMITIVE,
+    				"50%",
+    				NOT_INHERITED,
+    				new PrimitivePropertyBuilders.TransformOriginY()
+    		);
+
+    
+    
     /**
      * Unique CSSName instance for CSS2 property.
      */
@@ -1421,6 +1514,53 @@ public final class CSSName implements Comparable {
             );
 
     /**
+     * Unique CSSName instance for CSS3 property.
+     */
+    public final static CSSName IMAGE_RENDERING =
+            addProperty(
+                    "image-rendering",
+                    PRIMITIVE,
+                    "auto",
+                    INHERITS,
+                    new PrimitivePropertyBuilders.ImageRenderingBuilder()
+            );
+    
+    public final static CSSName BOX_SIZING =
+            addProperty(
+                    "box-sizing",
+                    PRIMITIVE,
+                    "content-box",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.BoxSizing()
+            );
+    
+    /**
+     * The maximum number of inserted shadow pages to insert for cut-off content.
+     */
+    public final static CSSName FS_MAX_OVERFLOW_PAGES = 
+            addProperty(
+                    "-fs-max-overflow-pages",
+                    PRIMITIVE,
+                    "0",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.FSMaxOverflowPages()
+            );
+    
+    /**
+     * Whether cut-off content to the right (default) of the page or left
+     * of the page should be inserted as shadow pages.
+     */
+    public final static CSSName FS_OVERFLOW_PAGES_DIRECTION =
+            addProperty(
+                    "-fs-overflow-pages-direction",
+                    PRIMITIVE,
+                    "ltr",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.FSOverflowPagesDirection()
+             );
+
+
+    /**
      * Unique CSSName instance for CSS2 property.
      */
     public final static CSSName BACKGROUND_SHORTHAND =
@@ -1623,6 +1763,18 @@ public final class CSSName implements Comparable {
                     NOT_INHERITED,
                     new SizePropertyBuilder()
             );
+    
+    /**
+     * Unique CSSName instance for CSS3 property.
+     */
+    public final static CSSName TRANSFORM_ORIGIN_SHORTHAND =
+            addProperty(
+                    "transform-origin",
+                    SHORTHAND,
+                    "50% 50%",
+                    NOT_INHERITED,
+                    new PrimitivePropertyBuilders.TransformOriginPropertyBuilder()
+            );
 
     public final static CSSSideProperties MARGIN_SIDE_PROPERTIES =
             new CSSSideProperties(
@@ -1658,8 +1810,6 @@ public final class CSSName implements Comparable {
                     CSSName.BORDER_RIGHT_COLOR,
                     CSSName.BORDER_BOTTOM_COLOR,
                     CSSName.BORDER_LEFT_COLOR);
-
-
     /**
      * Constructor for the CSSName object
      *
@@ -1686,6 +1836,7 @@ public final class CSSName implements Comparable {
      *
      * @return a string representation of the object.
      */
+    @Override
     public String toString() {
         return this.propName;
     }
@@ -1706,24 +1857,6 @@ public final class CSSName implements Comparable {
      */
     public static int countCSSPrimitiveNames() {
         return ALL_PRIMITIVE_PROPERTY_NAMES.size();
-    }
-
-    /**
-     * Iterator of ALL CSS 2 visual property names.
-     *
-     * @return Returns
-     */
-    public static Iterator allCSS2PropertyNames() {
-        return ALL_PROPERTY_NAMES.keySet().iterator();
-    }
-
-    /**
-     * Iterator of ALL primitive (non-shorthand) CSS 2 visual property names.
-     *
-     * @return Returns
-     */
-    public static Iterator allCSS2PrimitivePropertyNames() {
-        return ALL_PRIMITIVE_PROPERTY_NAMES.keySet().iterator();
     }
 
     /**
@@ -1770,8 +1903,7 @@ public final class CSSName implements Comparable {
      * @return The byPropertyName value
      */
     public static CSSName getByPropertyName(String propName) {
-
-        return (CSSName) ALL_PROPERTY_NAMES.get(propName);
+        return ALL_PROPERTY_NAMES.get(propName);
     }
 
     public static CSSName getByID(int id) {
@@ -1792,7 +1924,7 @@ public final class CSSName implements Comparable {
      * Adds a feature to the Property attribute of the CSSName class
      *
      * @param propName     The feature to be added to the Property attribute
-     * @param ‚type
+     * @param type
      * @param initialValue
      * @param inherit
      * @param implemented
@@ -1820,28 +1952,26 @@ public final class CSSName implements Comparable {
     }
 
     static {
-        Iterator iter = ALL_PROPERTY_NAMES.values().iterator();
+        Iterator<CSSName> iter = ALL_PROPERTY_NAMES.values().iterator();
         ALL_PROPERTIES = new CSSName[ALL_PROPERTY_NAMES.size()];
         while (iter.hasNext()) {
-            CSSName name = (CSSName) iter.next();
+            CSSName name = iter.next();
             ALL_PROPERTIES[name.FS_ID] = name;
         }
     }
 
     static {
-        CSSParser parser = new CSSParser(new CSSErrorHandler() {
-            public void error(String uri, String message) {
-                XRLog.cssParse("(" + uri + ") " + message);
-            }
+        CSSParser parser = new CSSParser((uri, message) -> {
+            XRLog.log(Level.INFO, LogMessageId.LogMessageId2Param.CSS_PARSE_GENERIC_MESSAGE, uri, message);
         });
-        for (Iterator i = ALL_PRIMITIVE_PROPERTY_NAMES.values().iterator(); i.hasNext(); ) {
-            CSSName cssName = (CSSName)i.next();
+        for (Iterator<CSSName> i = ALL_PRIMITIVE_PROPERTY_NAMES.values().iterator(); i.hasNext(); ) {
+            CSSName cssName = i.next();
             if (cssName.initialValue.charAt(0) != '=' && cssName.implemented) {
                 PropertyValue value = parser.parsePropertyValue(
                         cssName, StylesheetInfo.USER_AGENT, cssName.initialValue);
 
                 if (value == null) {
-                    XRLog.exception("Unable to derive initial value for " + cssName);
+                    XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_CSS_UNABLE_TO_DERIVE_INITIAL_VALUE_FOR_CLASSNAME, cssName);
                 } else {
                     cssName.initialDerivedValue = DerivedValueFactory.newDerivedValue(
                             null,
@@ -1852,14 +1982,14 @@ public final class CSSName implements Comparable {
         }
     }
 
-    //Assumed to be consistent with equals because CSSName is in essence an enum
-    public int compareTo(Object object) {
-        if (object == null) throw new NullPointerException();//required by Comparable
-        return FS_ID - ((CSSName) object).FS_ID;//will throw ClassCastException according to Comparable if not a CSSName
+    // Assumed to be consistent with equals because CSSName is in essence an enum
+    @Override
+    public int compareTo(CSSName object) {
+        Objects.requireNonNull(object);
+        return this.FS_ID - object.FS_ID;
     }
 
-    // FIXME equals, hashcode
-
+    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof CSSName)) return false;
@@ -1869,6 +1999,7 @@ public final class CSSName implements Comparable {
         return FS_ID == cssName.FS_ID;
     }
 
+    @Override
     public int hashCode() {
         return FS_ID;
     }

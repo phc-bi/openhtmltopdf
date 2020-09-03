@@ -19,18 +19,12 @@
  */
 package com.openhtmltopdf.css.parser;
 
-import java.util.List;
-import java.util.ArrayList;
-
-import org.w3c.dom.DOMException;
-import org.w3c.dom.css.CSSPrimitiveValue;
-import org.w3c.dom.css.CSSValue;
-import org.w3c.dom.css.Counter;
-import org.w3c.dom.css.RGBColor;
-import org.w3c.dom.css.Rect;
-
 import com.openhtmltopdf.css.constants.IdentValue;
 import com.openhtmltopdf.util.ArrayUtil;
+import org.w3c.dom.DOMException;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class PropertyValue implements CSSPrimitiveValue {
     public static final short VALUE_TYPE_NUMBER = 1;
@@ -40,15 +34,16 @@ public class PropertyValue implements CSSPrimitiveValue {
     public static final short VALUE_TYPE_STRING = 5;
     public static final short VALUE_TYPE_LIST = 6;
     public static final short VALUE_TYPE_FUNCTION = 7;
+    public static final short VALUE_TYPE_COUNTERS = 8;
     
-    private short _type;
-    private short _cssValueType;
+    private final short _type;
+    private final short _cssValueType;
     
     private String _stringValue;
     private float _floatValue;
     private String[] _stringArrayValue;
     
-    private String _cssText;
+    private final String _cssText;
     
     private FSColor _FSColor;
     
@@ -58,7 +53,8 @@ public class PropertyValue implements CSSPrimitiveValue {
     
     private Token _operator;
     
-    private List _values;
+    private List<PropertyValue> _values;
+    private List<CounterData> _counters;
     private FSFunction _function;
 
     public PropertyValue(short type, float floatValue, String cssText) {
@@ -108,13 +104,22 @@ public class PropertyValue implements CSSPrimitiveValue {
         _identValue = ident;
     }
     
-    public PropertyValue(List values) {
+    public PropertyValue(List<PropertyValue> values) {
         _type = CSSPrimitiveValue.CSS_UNKNOWN; // HACK
         _cssValueType = CSSValue.CSS_CUSTOM;
         _cssText = values.toString(); // HACK
         
         _values = values;
         _propertyValueType = VALUE_TYPE_LIST;
+    }
+    
+    public PropertyValue(List<CounterData> values, boolean unused) {
+        _type = CSSPrimitiveValue.CSS_UNKNOWN; // HACK
+        _cssValueType = CSSValue.CSS_CUSTOM;
+        _cssText = values.toString(); // HACK
+        
+        _counters = values;
+        _propertyValueType = VALUE_TYPE_COUNTERS;
     }
     
     public PropertyValue(FSFunction function) {
@@ -126,10 +131,7 @@ public class PropertyValue implements CSSPrimitiveValue {
         _propertyValueType = VALUE_TYPE_FUNCTION;
     }
 
-    public Counter getCounterValue() throws DOMException {
-        throw new UnsupportedOperationException();
-    }
-
+    @Override
     public float getFloatValue(short unitType) throws DOMException {
         return _floatValue;
     }
@@ -138,18 +140,12 @@ public class PropertyValue implements CSSPrimitiveValue {
         return _floatValue;
     }
 
+    @Override
     public short getPrimitiveType() {
         return _type;
     }
 
-    public RGBColor getRGBColorValue() throws DOMException {
-        throw new UnsupportedOperationException();
-    }
-
-    public Rect getRectValue() throws DOMException {
-        throw new UnsupportedOperationException();
-    }
-
+    @Override
     public String getStringValue() throws DOMException {
         return _stringValue;
     }
@@ -162,10 +158,12 @@ public class PropertyValue implements CSSPrimitiveValue {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public String getCssText() {
         return _cssText;
     }
 
+    @Override
     public short getCssValueType() {
         return _cssValueType;
     }
@@ -206,12 +204,17 @@ public class PropertyValue implements CSSPrimitiveValue {
         _stringArrayValue = ArrayUtil.cloneOrEmpty(stringArrayValue);
     }
     
+    @Override
     public String toString() {
         return _cssText;
     }
     
-    public List getValues() {
-        return new ArrayList(_values);
+    public List<PropertyValue> getValues() {
+        return new ArrayList<>(_values);
+    }
+    
+    public List<CounterData> getCounters() {
+        return new ArrayList<>(_counters);
     }
     
     public FSFunction getFunction() {

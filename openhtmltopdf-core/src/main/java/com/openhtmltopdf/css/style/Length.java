@@ -95,8 +95,9 @@ public class Length {
         }
     }
     
+    @Override
     public String toString() {
-        StringBuffer result = new StringBuffer();
+        StringBuilder result = new StringBuilder();
         result.append("(type=");
         switch (_type) {
         case FIXED:

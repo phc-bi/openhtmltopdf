@@ -19,18 +19,11 @@
  */
 package com.openhtmltopdf.render;
 
-import java.awt.Rectangle;
-import java.awt.Shape;
-import java.awt.geom.Area;
-import java.util.Iterator;
-import java.util.List;
-
-import org.w3c.dom.css.CSSPrimitiveValue;
-
 import com.openhtmltopdf.bidi.BidiReorderer;
 import com.openhtmltopdf.bidi.BidiSplitter;
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.IdentValue;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
 import com.openhtmltopdf.css.parser.FSColor;
 import com.openhtmltopdf.css.parser.FSRGBColor;
 import com.openhtmltopdf.css.parser.PropertyValue;
@@ -39,13 +32,20 @@ import com.openhtmltopdf.css.style.BackgroundSize;
 import com.openhtmltopdf.css.style.CalculatedStyle;
 import com.openhtmltopdf.css.style.CssContext;
 import com.openhtmltopdf.css.style.derived.BorderPropertySet;
+import com.openhtmltopdf.css.style.derived.FSLinearGradient;
 import com.openhtmltopdf.css.style.derived.LengthValue;
 import com.openhtmltopdf.css.value.FontSpecification;
 import com.openhtmltopdf.extend.FSImage;
 import com.openhtmltopdf.extend.OutputDevice;
-import com.openhtmltopdf.swing.Java2DOutputDevice;
 import com.openhtmltopdf.util.Configuration;
-import com.openhtmltopdf.util.Uu;
+import com.openhtmltopdf.util.LogMessageId;
+import com.openhtmltopdf.util.XRLog;
+
+import java.awt.*;
+import java.awt.geom.Area;
+import java.util.Iterator;
+import java.util.List;
+import java.util.logging.Level;
 
 /**
  * An abstract implementation of an {@link OutputDevice}.  It provides complete
@@ -57,9 +57,10 @@ public abstract class AbstractOutputDevice implements OutputDevice {
 
     protected abstract void drawLine(int x1, int y1, int x2, int y2);
     
+    @Override
     public void drawText(RenderingContext c, InlineText inlineText) {
         InlineLayoutBox iB = inlineText.getParent();
-        String text = inlineText.getSubstring();
+        String text = inlineText.isEndsOnSoftHyphen() ? inlineText.getSubstring() + '-' : inlineText.getSubstring();
 
         // We reorder text here for RTL.
         if (inlineText.getTextDirection() == BidiSplitter.RTL) {
@@ -71,8 +72,19 @@ public abstract class AbstractOutputDevice implements OutputDevice {
             setColor(iB.getStyle().getColor());
             setFont(iB.getStyle().getFSFont(c));
             setFontSpecification(iB.getStyle().getFontSpecification());
-            if (inlineText.getParent().getStyle().isTextJustify()) {
+            if (inlineText.getLetterSpacing() != 0f) {
+                JustificationInfo info = new JustificationInfo();
+                info.setNonSpaceAdjust(inlineText.getLetterSpacing());
+                info.setSpaceAdjust(inlineText.getLetterSpacing());
+                c.getTextRenderer().drawString(
+                        c.getOutputDevice(),
+                        text,
+                        iB.getAbsX() + inlineText.getX(), iB.getAbsY() + iB.getBaseline(),
+                        info);
+            } else if (inlineText.getParent().getStyle().isTextJustify()) {
+                // NOTE: Use of letter-spacing turns off justification
                 JustificationInfo info = inlineText.getParent().getLineBox().getJustificationInfo();
+
                 if (info != null) {
                     c.getTextRenderer().drawString(
                             c.getOutputDevice(),
@@ -121,6 +133,7 @@ public abstract class AbstractOutputDevice implements OutputDevice {
         drawLine(x, y, x + width, y);
     }
 
+    @Override
     public void drawTextDecoration(
             RenderingContext c, InlineLayoutBox iB, TextDecoration decoration) {
         setColor(iB.getStyle().getColor());
@@ -131,12 +144,13 @@ public abstract class AbstractOutputDevice implements OutputDevice {
                     edge.width, decoration.getThickness());
     }
 
+    @Override
     public void drawTextDecoration(RenderingContext c, LineBox lineBox) {
         setColor(lineBox.getStyle().getColor());
         Box parent = lineBox.getParent();
-        List decorations = lineBox.getTextDecorations();
-        for (Iterator i = decorations.iterator(); i.hasNext(); ) {
-            TextDecoration textDecoration = (TextDecoration)i.next();
+        List<TextDecoration> decorations = lineBox.getTextDecorations();
+        for (Iterator<TextDecoration> i = decorations.iterator(); i.hasNext(); ) {
+            TextDecoration textDecoration = i.next();
             if (parent.getStyle().isIdent(
                     CSSName.FS_TEXT_DECORATION_EXTENT, IdentValue.BLOCK)) {
                 fillRect(
@@ -153,6 +167,7 @@ public abstract class AbstractOutputDevice implements OutputDevice {
         }
     }
 
+    @Override
     public void drawDebugOutline(RenderingContext c, Box box, FSColor color) {
         setColor(color);
         Rectangle rect = box.getMarginEdge(box.getAbsX(), box.getAbsY(), c, 0, 0);
@@ -161,11 +176,13 @@ public abstract class AbstractOutputDevice implements OutputDevice {
         drawRect(rect.x, rect.y, rect.width, rect.height);
     }
 
+    @Override
     public void paintCollapsedBorder(
             RenderingContext c, BorderPropertySet border, Rectangle bounds, int side) {
         BorderPainter.paint(bounds, side, border, c, 0, false);
     }
 
+    @Override
     public void paintBorder(RenderingContext c, Box box) {
         if (! box.getStyle().isVisible(c, box)) {
             return;
@@ -176,6 +193,7 @@ public abstract class AbstractOutputDevice implements OutputDevice {
         BorderPainter.paint(borderBounds, box.getBorderSides(), box.getBorder(c), c, 0, true);
     }
 
+    @Override
     public void paintBorder(RenderingContext c, CalculatedStyle style, Rectangle edge, int sides) {
         BorderPainter.paint(edge, sides, style.getBorder(c), c, 0, true);
     }
@@ -186,19 +204,20 @@ public abstract class AbstractOutputDevice implements OutputDevice {
             try {
                 return c.getUac().getImageResource(uri).getImage();
             } catch (Exception ex) {
-                ex.printStackTrace();
-                Uu.p(ex);
+                XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_FAILED_TO_LOAD_BACKGROUND_IMAGE_AT_URI, uri, ex);
             }
         }
         return null;
     }
 
+    @Override
     public void paintBackground(
             RenderingContext c, CalculatedStyle style,
             Rectangle bounds, Rectangle bgImageContainer, BorderPropertySet border) {
         paintBackground0(c, style, bounds, bgImageContainer, border);
     }
 
+    @Override
     public void paintBackground(RenderingContext c, Box box) {
         if (! box.getStyle().isVisible(c, box)) {
             return;
@@ -218,7 +237,14 @@ public abstract class AbstractOutputDevice implements OutputDevice {
         }
 
         FSColor backgroundColor = style.getBackgroundColor();
-        FSImage backgroundImage = getBackgroundImage(c, style);
+        FSImage backgroundImage = null;
+        FSLinearGradient backgroundLinearGradient = null;
+        
+        if (style.isLinearGradient()) {
+            backgroundLinearGradient = style.getLinearGradient(c, (int) (bgImageContainer.width - border.width()), (int) (bgImageContainer.height - border.height()));
+        } else {
+            backgroundImage = getBackgroundImage(c, style);
+        }
 
         // If the image width or height is zero, then there's nothing to draw.
         // Also prevents infinte loop when trying to tile an image with zero size.
@@ -227,26 +253,36 @@ public abstract class AbstractOutputDevice implements OutputDevice {
         }
 
         if ( (backgroundColor == null || backgroundColor == FSRGBColor.TRANSPARENT) &&
-                backgroundImage == null) {
+             backgroundImage == null && backgroundLinearGradient == null) {
             return;
         }
         
-        Area borderBounds = new Area(BorderPainter.generateBorderBounds(backgroundBounds, border, true));
+        Shape borderBoundsShape = BorderPainter.generateBorderBounds(backgroundBounds, border, true);
 
-        Shape oldclip = getClip();
-        if(oldclip != null) {
-            // we need to respect the clip sent to us, get the intersection between the old and the new
-        	borderBounds.intersect(new Area(oldclip));
+        // FIXME for issue 396 - generating an Area for a shape with curves is very very slow and
+        // memory intensive. However, not generating an area for simple squares breaks many tests.
+        // Therefore, for now, we just don't use an area if there are border radii present.
+        Area borderBounds = border.hasBorderRadius() && c.isFastRenderer() ? null : new Area(borderBoundsShape);
+
+        Shape oldclip = null;
+        
+        if (!c.isFastRenderer()) {
+            oldclip = getClip();
+            if(oldclip != null) {
+                // we need to respect the clip sent to us, get the intersection between the old and the new
+        	    borderBounds.intersect(new Area(oldclip));
+            }
+            setClip(borderBounds);
+        } else if (backgroundImage != null || backgroundLinearGradient != null) {
+        	pushClip(borderBounds != null ? borderBounds : borderBoundsShape);
         }
-        
-        setClip(borderBounds);
-        
+
         if (backgroundColor != null && backgroundColor != FSRGBColor.TRANSPARENT) {
             setColor(backgroundColor);
-            fill(borderBounds);
+            fill(borderBounds != null ? borderBounds : borderBoundsShape);
         }
 
-        if (backgroundImage != null) {
+        if (backgroundImage != null || backgroundLinearGradient != null) {
             Rectangle localBGImageContainer = bgImageContainer;
             if (style.isFixedBackground()) {
                 localBGImageContainer = c.getViewportRectangle();
@@ -260,6 +296,7 @@ public abstract class AbstractOutputDevice implements OutputDevice {
                 yoff += (int)border.top();
             }
 
+            if (backgroundImage != null) {
             scaleBackgroundImage(c, style, localBGImageContainer, backgroundImage);
 
             float imageWidth = backgroundImage.getWidth();
@@ -277,7 +314,7 @@ public abstract class AbstractOutputDevice implements OutputDevice {
             if (! hrepeat && ! vrepeat) {
                 Rectangle imageBounds = new Rectangle(xoff, yoff, (int)imageWidth, (int)imageHeight);
                 if (imageBounds.intersects(backgroundBounds)) {
-                    drawImage(backgroundImage, xoff, yoff);
+                    drawImage(backgroundImage, xoff, yoff, style.isImageRenderingInterpolate());
                 }
             } else if (hrepeat && vrepeat) {
                 paintTiles(
@@ -285,7 +322,7 @@ public abstract class AbstractOutputDevice implements OutputDevice {
                         adjustTo(backgroundBounds.x, xoff, (int)imageWidth),
                         adjustTo(backgroundBounds.y, yoff, (int)imageHeight),
                         backgroundBounds.x + backgroundBounds.width,
-                        backgroundBounds.y + backgroundBounds.height);
+                        backgroundBounds.y + backgroundBounds.height, style.isImageRenderingInterpolate());
             } else if (hrepeat) {
                 xoff = adjustTo(backgroundBounds.x, xoff, (int)imageWidth);
                 Rectangle imageBounds = new Rectangle(xoff, yoff, (int)imageWidth, (int)imageHeight);
@@ -294,7 +331,7 @@ public abstract class AbstractOutputDevice implements OutputDevice {
                             backgroundImage,
                             xoff,
                             yoff,
-                            backgroundBounds.x + backgroundBounds.width);
+                            backgroundBounds.x + backgroundBounds.width, style.isImageRenderingInterpolate());
                 }
             } else if (vrepeat) {
                 yoff = adjustTo(backgroundBounds.y, yoff, (int)imageHeight);
@@ -304,12 +341,19 @@ public abstract class AbstractOutputDevice implements OutputDevice {
                             backgroundImage,
                             xoff,
                             yoff,
-                            backgroundBounds.y + backgroundBounds.height);
+                            backgroundBounds.y + backgroundBounds.height, style.isImageRenderingInterpolate());
                 }
+            } // End background image painting.
+            } else if (backgroundLinearGradient != null) {
+                drawLinearGradient(backgroundLinearGradient, new Rectangle(xoff, yoff, bgImageContainer.width, bgImageContainer.height));
             }
-
         }
-        setClip(oldclip);
+        
+        if (!c.isFastRenderer()) {
+        	setClip(oldclip);
+        } else if (backgroundImage != null || backgroundLinearGradient != null) {
+        	popClip();
+        }
     }
 
     private int adjustTo(int target, int current, int imageDim) {
@@ -329,30 +373,30 @@ public abstract class AbstractOutputDevice implements OutputDevice {
         return result;
     }
 
-    private void paintTiles(FSImage image, int left, int top, int right, int bottom) {
+    private void paintTiles(FSImage image, int left, int top, int right, int bottom, boolean interpolate) {
         int width = image.getWidth();
         int height = image.getHeight();
 
         for (int x = left; x < right; x+= width) {
             for (int y = top; y < bottom; y+= height) {
-                drawImage(image, x, y);
+                drawImage(image, x, y, interpolate);
             }
         }
     }
 
-    private void paintVerticalBand(FSImage image, int left, int top, int bottom) {
+    private void paintVerticalBand(FSImage image, int left, int top, int bottom, boolean interpolate) {
         int height = image.getHeight();
 
         for (int y = top; y < bottom; y+= height) {
-            drawImage(image, left, y);
+            drawImage(image, left, y, interpolate);
         }
     }
 
-    private void paintHorizontalBand(FSImage image, int left, int top, int right) {
+    private void paintHorizontalBand(FSImage image, int left, int top, int right, boolean interpolate) {
         int width = image.getWidth();
 
         for (int x = left; x < right; x+= width) {
-            drawImage(image, x, top);
+            drawImage(image, x, top, interpolate);
         }
     }
 
@@ -434,5 +478,10 @@ public abstract class AbstractOutputDevice implements OutputDevice {
      */
     public void setFontSpecification(FontSpecification fs) {
 	_fontSpec = fs;
+    }
+
+    @Override
+    public boolean isPDF() {
+        return false;
     }
 }

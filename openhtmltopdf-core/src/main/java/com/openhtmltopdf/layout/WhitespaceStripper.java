@@ -50,18 +50,15 @@ public class WhitespaceStripper {
      * 
      * <b>NOTE:</b> The <code>inlineContent</code> parameter may be modified
      *
-     * @param c
-     * @param inlineContent
+     * @param inlineContent the inline content to strip the whitespaces on
      */
-    public static void stripInlineContent(List inlineContent) {
+    public static void stripInlineContent(List<Styleable> inlineContent) {
         boolean collapse = false;
         boolean allWhitespace = true;
 
-        for (Iterator i = inlineContent.iterator(); i.hasNext();) {
-            Styleable node = (Styleable)i.next();
-
+        for (Styleable node : inlineContent) {
             if (node.getStyle().isInline()) {
-                InlineBox iB = (InlineBox)node;
+                InlineBox iB = (InlineBox) node;
                 boolean collapseNext = stripWhitespace(iB, collapse);
                 if (! iB.isRemovableWhitespace()) {
                     allWhitespace = false;
@@ -86,12 +83,11 @@ public class WhitespaceStripper {
         return style.isFloated() || style.isAbsolute() || style.isFixed() || style.isRunning();
     }
 
-    private static void stripTextContent(List stripped) {
+    private static void stripTextContent(List<Styleable> stripped) {
         boolean onlyAnonymous = true;
-        for (Iterator i = stripped.iterator(); i.hasNext(); ) {
-            Styleable node = (Styleable)i.next();
+        for (Styleable node : stripped) {
             if (node.getStyle().isInline()) {
-                InlineBox iB = (InlineBox)node;
+                InlineBox iB = (InlineBox) node;
                 if (iB.getElement() != null) {
                     onlyAnonymous = false;
                 }
@@ -101,8 +97,8 @@ public class WhitespaceStripper {
         }
         
         if (onlyAnonymous) {
-            for (Iterator i = stripped.iterator(); i.hasNext(); ) {
-                Styleable node = (Styleable)i.next();
+            for (Iterator<Styleable> i = stripped.iterator(); i.hasNext(); ) {
+                Styleable node = i.next();
                 if (node.getStyle().isInline()) {
                     i.remove();
                 }
@@ -145,19 +141,55 @@ public class WhitespaceStripper {
         }
         return text.equals("") ? collapseLeading : collapseNext;
     }
+    
+    /**
+     * Collapse whitespace for normal or no-wrap modes. Much faster (15x in simple testing)
+     * than using multiple regular expressions.
+     * 
+     * NOTE: Slightly different behavior to using regular expressions as definition of space characters
+     * differ, but I believe this is the correct definition according to CSS specifications.
+     * @param text
+     * @param collapseLeading
+     * @return
+     */
+    private static String collapseWhitespaceNormalOrNoWrap(String text, boolean collapseLeading) {
+		char[] chs = text.toCharArray();
+		StringBuilder builder = new StringBuilder(chs.length);
+		boolean spaceAdded = collapseLeading;
+		
+		for (int i = 0; i < chs.length; i++) {
+			char ch = chs[i];
+			
+			if (spaceAdded) {
+				if (ch != '\n' &&
+					ch != '\t' &&
+					ch != ' ') {
+					builder.append(ch);
+					spaceAdded = false;
+				}
+			} else {
+				if (ch == '\n' ||
+					ch == '\t' ||
+					ch == ' ') {
+					builder.append(' ');
+					spaceAdded = true;
+				} else {
+					builder.append(ch);
+				}
+			}
+		}
+		
+		return builder.toString();
+	}
 
     private static String collapseWhitespace(InlineBox iB, IdentValue whitespace, String text, boolean collapseLeading) {
         if (whitespace == IdentValue.NORMAL || whitespace == IdentValue.NOWRAP) {
-            text = linefeed_space_collapse.matcher(text).replaceAll(EOL);
+            return collapseWhitespaceNormalOrNoWrap(text, collapseLeading);
         } else if (whitespace == IdentValue.PRE) {
             text = space_before_linefeed_collapse.matcher(text).replaceAll(EOL);
         }
 
-        if (whitespace == IdentValue.NORMAL || whitespace == IdentValue.NOWRAP) {
-            text = linefeed_to_space.matcher(text).replaceAll(SPACE);
-            text = tab_to_space.matcher(text).replaceAll(SPACE);
-            text = space_collapse.matcher(text).replaceAll(SPACE);
-        } else if (whitespace == IdentValue.PRE || whitespace == IdentValue.PRE_WRAP) {
+        if (whitespace == IdentValue.PRE || whitespace == IdentValue.PRE_WRAP) {
             int tabSize = (int) iB.getStyle().asFloat(CSSName.TAB_SIZE);
             char[] tabs = new char[tabSize];
             Arrays.fill(tabs, ' ');
@@ -165,14 +197,6 @@ public class WhitespaceStripper {
         } else if (whitespace == IdentValue.PRE_LINE) {
             text = tab_to_space.matcher(text).replaceAll(SPACE);
             text = space_collapse.matcher(text).replaceAll(SPACE);
-        }
-
-        if (whitespace == IdentValue.NORMAL || whitespace == IdentValue.NOWRAP) {
-            // collapse first space against prev inline
-            if (text.startsWith(SPACE) &&
-                    collapseLeading) {
-                text = text.substring(1, text.length());
-            }
         }
 
         return text;

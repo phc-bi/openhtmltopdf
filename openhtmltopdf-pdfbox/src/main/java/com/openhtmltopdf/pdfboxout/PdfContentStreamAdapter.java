@@ -1,19 +1,27 @@
 package com.openhtmltopdf.pdfboxout;
 
-import java.awt.geom.AffineTransform;
-import java.io.IOException;
-import java.util.Locale;
+import com.openhtmltopdf.util.LogMessageId;
+import com.openhtmltopdf.util.XRLog;
 
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.documentinterchange.markedcontent.PDPropertyList;
 import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.pdmodel.graphics.shading.PDShading;
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.apache.pdfbox.util.Matrix;
 
-import com.openhtmltopdf.util.XRLog;
+import java.awt.geom.AffineTransform;
+import java.io.IOException;
+import java.util.logging.Level;
 
 public class PdfContentStreamAdapter {
     private final PDPageContentStream cs;
+
 
     public static class PdfException extends RuntimeException {
         private static final long serialVersionUID = 1L;
@@ -24,7 +32,7 @@ public class PdfContentStreamAdapter {
     }
 
     private void logAndThrow(String method, IOException e) {
-        XRLog.exception("Exception in PDF writing method: " + method, e);
+        XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_PDF_IN_WRITING_METHOD, method, e);
         throw new PdfException(method, e);
     }
 
@@ -48,11 +56,11 @@ public class PdfContentStreamAdapter {
             logAndThrow("addRect", e);
         }
     }
-    
+
     public void newPath() {
         // I think PDF-BOX does this automatically.
     }
-    
+
     public void setExtGState(PDExtendedGraphicsState gs) {
         try {
             cs.setGraphicsStateParameters(gs);
@@ -216,14 +224,19 @@ public class PdfContentStreamAdapter {
 
     public void restoreGraphics() {
         try {
+            saveGraphicsCounter--;
             cs.restoreGraphicsState();
+			if (saveGraphicsCounter < 0)
+				throw new IllegalStateException("Invalid save/restore pairing!");
         } catch (IOException e) {
             logAndThrow("restoreGraphics", e);
         }
     }
 
+    private int saveGraphicsCounter = 0;
     public void saveGraphics() {
         try {
+            saveGraphicsCounter++;
             cs.saveGraphicsState();
         } catch (IOException e) {
             logAndThrow("saveGraphics", e);
@@ -264,6 +277,14 @@ public class PdfContentStreamAdapter {
         }
     }
 
+    public void setRenderingMode(RenderingMode rm) {
+        try {
+            cs.setRenderingMode(rm);
+        } catch (IOException e) {
+            logAndThrow("setRenderingMode", e);
+        }
+    }
+
     public void drawString(String s) {
         try {
             cs.showText(s);
@@ -280,32 +301,81 @@ public class PdfContentStreamAdapter {
             logAndThrow("drawImage", e);
         }
     }
+    
+    public void drawXForm(PDFormXObject xObject) {
+        try {
+            cs.drawForm(xObject);
+        } catch (IOException e) {
+            logAndThrow("drawXForm", e);
+        }
+    }
 
     public void setMiterLimit(float miterLimit) {
-        // TODO Not currently supported by PDF-BOX.
-    }
-
-    public void setTextSpacing(float nonSpaceAdjust) {
         try {
-            cs.appendRawCommands(String.format(Locale.US, "%.4f Tc\n", nonSpaceAdjust));
+            /*
+             * Only set the miter limit if it is > 0, as 0 is a invalid
+             * value which causes Acrobat Reader to stop drawing anything.
+             */
+        	if( miterLimit > 0.0)
+                cs.setMiterLimit(miterLimit);
         } catch (IOException e) {
-            logAndThrow("setSpaceSpacing", e);
+            logAndThrow("setMiterLimit", e);
+        }
+    }
+    
+    /**
+     * 
+     * @param str MUST consist of a array of strings optionally interspersed with
+     * Float values specifying additional spacing.
+     */
+    public void drawStringWithPositioning(Object[] str) {
+        try {
+            cs.showTextWithPositioning(str);
+        } catch (IOException e) {
+            logAndThrow("drawStringWithPositioning", e);
         }
     }
 
-    public void setSpaceSpacing(float spaceAdjust) {
-        try {
-            cs.appendRawCommands(String.format(Locale.US, "%.4f Tw\n", spaceAdjust));
-        } catch (IOException e) {
-            logAndThrow("setSpaceSpacing", e);
-        }
-    }
-
-    public void setPdfMatrix(AffineTransform transform) {
+    public void applyPdfMatrix(AffineTransform transform) {
         try {
            cs.transform(new Matrix(transform));
         } catch (IOException e) {
-            logAndThrow("setPdfMatrix", e);
+            logAndThrow("applyPdfMatrix", e);
+        }
+    }
+
+    public void placeXForm(float x, float y, PDFormXObject xFormObject) {
+        try {
+			cs.saveGraphicsState();
+			cs.transform(new Matrix(AffineTransform.getTranslateInstance(x, y)));
+			cs.drawForm(xFormObject);
+			cs.restoreGraphicsState();
+        } catch (IOException e) {
+            logAndThrow("placeXForm", e);
+        }
+    }
+    
+    public void beginMarkedContent(COSName tag, COSDictionary dict) {
+        try {
+            cs.beginMarkedContent(tag, PDPropertyList.create(dict));
+        } catch (IOException e) {
+            logAndThrow("beginMarkedContent", e);
+        }
+    }
+    
+    public void endMarkedContent() {
+        try {
+            cs.endMarkedContent();
+        } catch (IOException e) {
+            logAndThrow("endMarkedContent", e);
+        }
+    }
+
+    public void paintGradient(PDShading shading) {
+        try {
+            cs.shadingFill(shading);
+        } catch (IOException e) {
+            logAndThrow("paintGradient", e);
         }
     }
 }

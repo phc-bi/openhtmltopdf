@@ -1,27 +1,31 @@
 package com.openhtmltopdf.extend;
 
+import java.io.Closeable;
 import java.util.List;
 
 import org.w3c.dom.Element;
 
 import com.openhtmltopdf.css.sheet.FontFaceRule;
+import com.openhtmltopdf.css.style.CssContext;
 import com.openhtmltopdf.layout.SharedContext;
+import com.openhtmltopdf.render.Box;
 import com.openhtmltopdf.render.RenderingContext;
 
-public interface SVGDrawer {
-	public void drawSVG(Element svgElement, OutputDevice outputDevice, RenderingContext ctx, double x, double y, float dotsPerInch);
+public interface SVGDrawer extends Closeable {
+    void importFontFaceRules(List<FontFaceRule> fontFaces,
+            SharedContext shared);
 
-	public void importFontFaceRules(List<FontFaceRule> fontFaces, SharedContext shared);
+    SVGImage buildSVGImage(Element svgElement, Box box, CssContext cssContext, double cssWidth,
+            double cssHeight, double dotsPerPixel);
 
-	/**
-	 * @param e the SVG element
-	 * @return the width of the SVG in pixels.
-	 */
-	public int getSVGWidth(Element e);
+    default void withUserAgent(UserAgentCallback userAgentCallback) {}
 
-	/**
-	 * @param e the SVG element
-	 * @return the height of the SVG in pixels.
-	 */
-	public int getSVGHeight(Element e);
+    interface SVGImage {
+        int getIntrinsicWidth();
+
+        int getIntrinsicHeight();
+
+        void drawSVG(OutputDevice outputDevice, RenderingContext ctx,
+                double x, double y);
+    }
 }

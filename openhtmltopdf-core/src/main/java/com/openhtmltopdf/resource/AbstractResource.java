@@ -21,19 +21,17 @@ package com.openhtmltopdf.resource;
 
 import org.xml.sax.InputSource;
 
-import com.openhtmltopdf.util.XRLog;
-
 import java.io.BufferedInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * @author Patrick Wright
  */
 public abstract class AbstractResource implements Resource {
-	private static enum StreamType { READER, STREAM, INPUT_SOURCE; }
+	private enum StreamType { READER, STREAM, INPUT_SOURCE; }
 	private final StreamType streamType;
 	
 	private InputSource inputSource;
@@ -77,11 +75,7 @@ public abstract class AbstractResource implements Resource {
     public Reader getResourceReader() {
     	if (streamType == StreamType.STREAM &&
         	this.inputReader == null) {
-        	try {
-				this.inputReader = new InputStreamReader(this.inputStream, "UTF-8");
-			} catch (UnsupportedEncodingException e) {
-				XRLog.exception("Could not create reader for stream", e);
-			}
+            this.inputReader = new InputStreamReader(this.inputStream, StandardCharsets.UTF_8);
         }
         return this.inputReader;
     }

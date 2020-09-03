@@ -24,13 +24,13 @@ import java.io.Reader;
 import java.util.logging.Level;
 
 import com.openhtmltopdf.css.extend.StylesheetFactory;
-import com.openhtmltopdf.css.parser.CSSErrorHandler;
 import com.openhtmltopdf.css.parser.CSSParser;
 import com.openhtmltopdf.css.sheet.Ruleset;
 import com.openhtmltopdf.css.sheet.Stylesheet;
 import com.openhtmltopdf.css.sheet.StylesheetInfo;
 import com.openhtmltopdf.extend.UserAgentCallback;
 import com.openhtmltopdf.resource.CSSResource;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
 
 /**
@@ -46,36 +46,34 @@ public class StylesheetFactoryImpl implements StylesheetFactory {
      */
     private UserAgentCallback _userAgentCallback;
 
-    private int _cacheCapacity = 16;
+    private final int _cacheCapacity = 16;
 
     /**
      * an LRU cache
      */
-    private java.util.LinkedHashMap _cache =
-            new java.util.LinkedHashMap(_cacheCapacity, 0.75f, true) {
+    private final java.util.LinkedHashMap<String, Stylesheet> _cache =
+            new java.util.LinkedHashMap<String, Stylesheet>(_cacheCapacity, 0.75f, true) {
                 private static final long serialVersionUID = 1L;
 
-                protected boolean removeEldestEntry(java.util.Map.Entry eldest) {
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Stylesheet> eldest) {
                     return size() > _cacheCapacity;
                 }
             };
+            
     private CSSParser _cssParser;
 
     public StylesheetFactoryImpl(UserAgentCallback userAgentCallback) {
         _userAgentCallback = userAgentCallback;
-        _cssParser = new CSSParser(new CSSErrorHandler() {
-            public void error(String uri, String message) {
-                XRLog.cssParse(Level.WARNING, "(" + uri + ") " + message);
-            }
+        _cssParser = new CSSParser((uri, message) -> {
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId2Param.CSS_PARSE_GENERIC_MESSAGE, uri, message);
         });
     }
 
-    public synchronized Stylesheet parse(Reader reader, StylesheetInfo info) {
+    public Stylesheet parse(Reader reader, StylesheetInfo info) {
         try {
             return _cssParser.parseStylesheet(info.getUri(), info.getOrigin(), reader);
         } catch (IOException e) {
-            XRLog.cssParse(Level.WARNING, "Couldn't parse stylesheet at URI " + info.getUri() + ": " + e.getMessage(), e);
-            e.printStackTrace();
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId2Param.CSS_PARSE_COULDNT_PARSE_STYLESHEET_AT_URI, info.getUri(), e.getMessage(), e);
             return new Stylesheet(info.getUri(), info.getOrigin());
         }
     }
@@ -105,7 +103,7 @@ public class StylesheetFactoryImpl implements StylesheetFactory {
         }
     }
 
-    public synchronized Ruleset parseStyleDeclaration(int origin, String styleDeclaration) {
+    public Ruleset parseStyleDeclaration(int origin, String styleDeclaration) {
         return _cssParser.parseDeclaration(origin, styleDeclaration);
     }
 
@@ -117,7 +115,8 @@ public class StylesheetFactoryImpl implements StylesheetFactory {
      *              factory.
      * @param sheet The sheet to cache.
      */
-    public synchronized void putStylesheet(Object key, Stylesheet sheet) {
+    @Deprecated
+    public void putStylesheet(String key, Stylesheet sheet) {
         _cache.put(key, sheet);
     }
 
@@ -127,7 +126,8 @@ public class StylesheetFactoryImpl implements StylesheetFactory {
      *         Note that the Stylesheet may be null.
      */
     //TODO: work out how to handle caching properly, with cache invalidation
-    public synchronized boolean containsStylesheet(Object key) {
+    @Deprecated
+    public boolean containsStylesheet(String key) {
         return _cache.containsKey(key);
     }
 
@@ -138,8 +138,9 @@ public class StylesheetFactoryImpl implements StylesheetFactory {
      *            putStylesheet();
      * @return The stylesheet
      */
-    public synchronized Stylesheet getCachedStylesheet(Object key) {
-        return (Stylesheet) _cache.get(key);
+    @Deprecated
+    public Stylesheet getCachedStylesheet(String key) {
+        return _cache.get(key);
     }
 
     /**
@@ -148,11 +149,13 @@ public class StylesheetFactoryImpl implements StylesheetFactory {
      * @param key The key for this sheet; same as key passed to
      *            putStylesheet();
      */
-    public synchronized Object removeCachedStylesheet(Object key) {
+    @Deprecated
+    public Object removeCachedStylesheet(String key) {
         return _cache.remove(key);
     }
     
-    public synchronized void flushCachedStylesheets() {
+    @Deprecated
+    public void flushCachedStylesheets() {
         _cache.clear();
     }
 
@@ -165,7 +168,7 @@ public class StylesheetFactoryImpl implements StylesheetFactory {
      */
     //TODO: this looks a bit odd
     public Stylesheet getStylesheet(StylesheetInfo info) {
-        XRLog.load("Requesting stylesheet: " + info.getUri());
+        XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.LOAD_REQUESTING_STYLESHEET_AT_URI, info.getUri());
 
         Stylesheet s = getCachedStylesheet(info.getUri());
         if (s == null && !containsStylesheet(info.getUri())) {

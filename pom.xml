@@ -5,7 +5,7 @@
 
   <groupId>com.openhtmltopdf</groupId>
   <artifactId>openhtmltopdf-parent</artifactId>
-  <version>0.0.1-RC6-SNAPSHOT</version>
+  <version>1.0.5-SNAPSHOT</version>
 
   <packaging>pom</packaging>
 
@@ -23,13 +23,16 @@
 
   <modules>
     <module>openhtmltopdf-core</module>
-    <module>openhtmltopdf-log4j</module>
     <module>openhtmltopdf-slf4j</module>
     <module>openhtmltopdf-examples</module>
     <module>openhtmltopdf-pdfbox</module>
     <module>openhtmltopdf-rtl-support</module>
-    <module>openhtmltopdf-jsoup-dom-converter</module>
     <module>openhtmltopdf-svg-support</module>
+    <module>openhtmltopdf-java2d</module>
+    <module>openhtmltopdf-objects</module>
+    <module>openhtmltopdf-mathml-support</module>
+    <module>openhtmltopdf-latex-support</module>
+    <module>openhtmltopdf-pdfa-testing</module>
   </modules>
 
   <scm>
@@ -77,13 +80,16 @@
   </profiles>
 
   <build>
-     <extensions>
-      <extension>
-        <groupId>org.apache.maven.wagon</groupId>
-        <artifactId>wagon-ssh</artifactId>
-        <version>2.10</version>
-      </extension>
-    </extensions>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-deploy-plugin</artifactId>
+          <version>${open.deploy.plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    
     <plugins>
       <plugin>
         <artifactId>maven-release-plugin</artifactId>
@@ -98,15 +104,15 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.3</version>
         <configuration>
-          <source>1.6</source>
-          <target>1.6</target>
+          <source>1.8</source>
+          <target>1.8</target>
         </configuration>
       </plugin>
 
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-source-plugin</artifactId>
-        <version>2.4</version>
+        <version>3.0.1</version>
         <executions>
           <execution>
             <id>attach-sources</id>
@@ -120,8 +126,10 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
-        <version>2.10.3</version>
+        <version>3.0.1</version>
         <configuration>
+          <source>8</source>
+          <doclint>none</doclint>
           <additionalparam>${javadoc.opts}</additionalparam>
         </configuration>
         <executions>
@@ -137,6 +145,12 @@
   </build>
 
   <properties>
+    <open.deploy.plugin.version>3.0.0-M1</open.deploy.plugin.version>
+    <open.bundle.plugin.version>5.1.1</open.bundle.plugin.version>
+    <open.jar.plugin.version>3.2.0</open.jar.plugin.version>
+
+    <open.batik.version>1.12</open.batik.version>
+
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 

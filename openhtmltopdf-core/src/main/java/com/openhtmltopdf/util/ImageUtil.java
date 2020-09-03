@@ -23,13 +23,11 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.logging.Level;
 import javax.imageio.ImageIO;
-import javax.xml.bind.DatatypeConverter;
 
 /**
  * Static utility methods for working with images. Meant to suggest "best practices" for the most straightforward
@@ -39,36 +37,14 @@ import javax.xml.bind.DatatypeConverter;
  */
 public class ImageUtil {
 
-    private static final Map qual;
+    private static final Map<DownscaleQuality, Scaler> qual;
 
     static {
-        qual = new HashMap();
+        qual = new HashMap<>();
         qual.put(DownscaleQuality.FAST, new OldScaler());
         qual.put(DownscaleQuality.HIGH_QUALITY, new HighQualityScaler());
         qual.put(DownscaleQuality.LOW_QUALITY, new FastScaler());
         qual.put(DownscaleQuality.AREA, new AreaAverageScaler());
-    }
-
-    /**
-     * Sets the background of the image to the specified color
-     *
-     * @param image the image
-     * @param bgColor the color
-     */
-    public static void clearImage(BufferedImage image, Color bgColor) {
-        Graphics2D g2d = (Graphics2D) image.getGraphics();
-        g2d.setColor(bgColor);
-        g2d.fillRect(0, 0, image.getWidth(), image.getHeight());
-        g2d.dispose();
-    }
-
-    /**
-     * Sets the background of the image to white.
-     *
-     * @param image the image
-     */
-    public static void clearImage(BufferedImage image) {
-        clearImage(image, Color.WHITE);
     }
 
     public static BufferedImage makeCompatible(BufferedImage bimg) {
@@ -95,8 +71,7 @@ public class ImageUtil {
      * for best performance. In a headless environment, simply creates a new BufferedImage. For non-headless
      * environments, this just sets up and calls
      * {@link java.awt.GraphicsConfiguration#createCompatibleImage(int,int,int)}. The image will not have anything
-     * drawn to it, not even a white background; you must do this yourself. The {@link #clearBackground(BufferedImage)}
-     * method will do this for you if you like.
+     * drawn to it, not even a white background; you must do this yourself.
      *
      * @param width  Target width for the image
      * @param height Target height for the image
@@ -147,15 +122,15 @@ public class ImageUtil {
     }
 
     /**
-     * Scales an image to the requested width and height, assuming these are both >= 1; size given in pixels.
-     * If either width or height is <=0, the current image width or height will be used. This method assumes
+     * Scales an image to the requested width and height, assuming these are both &gt;= 1; size given in pixels.
+     * If either width or height is &lt;=0, the current image width or height will be used. This method assumes
      * that, at the moment the method is called, the width and height of the image are available; it won't wait for
      * them. Therefore, the method should be called once the image has completely loaded and not before.
-     * <p/>
+     * <br>
      * Override this method in a subclass to optimize image scaling operations; note that the legacy
      * {@link java.awt.Image#getScaledInstance(int,int,int)} is considered to perform poorly compared to more
      * recent developed techniques.
-     * <p/>
+     * <br>
      * For a discussion of the options from a member of the Java2D team, see
      * http://today.java.net/pub/a/today/2007/04/03/perils-of-image-getscaledinstance.html
      *
@@ -181,15 +156,15 @@ public class ImageUtil {
     }
 
     /**
-     * Scales an image to the requested width and height, assuming these are both >= 1; size given in pixels.
-     * If either width or height is <=0, the current image width or height will be used. This method assumes       y
+     * Scales an image to the requested width and height, assuming these are both &gt;= 1; size given in pixels.
+     * If either width or height is &lt;=0, the current image width or height will be used. This method assumes       y
      * that, at the moment the method is called, the width and height of the image are available; it won't wait for
      * them. Therefore, the method should be called once the image has completely loaded and not before.
-     * <p/>
+     * <br>
      * Override this method in a subclass to optimize image scaling operations; note that the legacy
      * {@link java.awt.Image#getScaledInstance(int,int,int)} is considered to perform poorly compared to more
      * recent developed techniques.
-     * <p/>
+     * <br>
      * For a discussion of the options from a member of the Java2D team, see
      * http://today.java.net/pub/a/today/2007/04/03/perils-of-image-getscaledinstance.html
      *
@@ -208,31 +183,6 @@ public class ImageUtil {
         ScalingOptions opt = new ScalingOptions(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB, quality, hint);
 
         return getScaledInstance(opt, orgImage);
-    }
-
-    /**
-     * Scales one image to multiple dimensions, using the same ScalingOptions for each. The method follows the same
-     * process for scaling as {@link #getScaledInstance(ScalingOptions,java.awt.Image)}.
-     *
-     * @param opt		Options to apply to control scaling process.
-     * @param img		The original image to scale
-     * @param dimensions List of dimensions to scale to; one output image will be produced for each dimension. Will
-     *                   not check for duplicate dimensions.
-     * @return List of buffered images in the given dimensions.
-     */
-    public static java.util.List scaleMultiple(ScalingOptions opt, BufferedImage img, java.util.List dimensions) {
-        java.util.List scaledImages = new ArrayList(dimensions.size());
-
-        Iterator iter = dimensions.iterator();
-        while (iter.hasNext()) {
-            Dimension dim = (Dimension) iter.next();
-            opt.setTargetDimensions(dim);
-
-            BufferedImage scaled = getScaledInstance(opt, img);
-
-            scaledImages.add(scaled);
-        }
-        return scaledImages;
     }
 
     /**
@@ -280,6 +230,10 @@ public class ImageUtil {
         return (uri != null && uri.startsWith("data:image/"));
     }
     
+    public static boolean isDataUri(String uri) {
+        return uri != null && uri.startsWith("data:");
+    }
+    
     /**
      * Get the binary content of an embedded base 64 image.
      *
@@ -290,11 +244,15 @@ public class ImageUtil {
         int b64Index = imageDataUri.indexOf("base64,");
         if (b64Index != -1) {
             String b64encoded = imageDataUri.substring(b64Index + "base64,".length());
-            return DatatypeConverter.parseBase64Binary(b64encoded);
+            return Base64.getMimeDecoder().decode(b64encoded);
         } else {
-            XRLog.load(Level.SEVERE, "Embedded XHTML images must be encoded in base 64.");
+            XRLog.log(Level.SEVERE, LogMessageId.LogMessageId0Param.LOAD_EMBEDDED_DATA_URI_MUST_BE_ENCODED_IN_BASE64);
         }
         return null;
+    }
+    
+    public static byte[] getEmbeddedDataUri(String dataUri) {
+        return getEmbeddedBase64Image(dataUri);
     }
     
     /**
@@ -310,7 +268,7 @@ public class ImageUtil {
                 return ImageIO.read(new ByteArrayInputStream(buffer));
             }
         } catch (IOException ex) {
-            XRLog.exception("Can't read XHTML embedded image", ex);
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.EXCEPTION_CANT_READ_XHTML_EMBEDDED_IMAGE, ex);
         }
         return null;
     }
@@ -323,22 +281,8 @@ public class ImageUtil {
          * to be fully loaded (e.g. no need to wait for loading on requesting height or width.
          *
          * @param img		the original image to be scaled
-         * @param imageType	type of image from {@link java.awt.image.BufferedImage} (values starting with TYPE)
-         * @param hint		one of the rendering hints that corresponds to
-         *                      {@code RenderingHints.KEY_INTERPOLATION} (e.g.
-         *                      {@code RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR},
-         *                      {@code RenderingHints.VALUE_INTERPOLATION_BILINEAR},
-         *                      {@code RenderingHints.VALUE_INTERPOLATION_BICUBIC})
-         * @param higherQuality if true, this method will use a multi-step
-         *                      scaling technique that provides higher quality than the usual
-         *                      one-step technique (only useful in downscaling cases, where
-         *                      {@code targetWidth} or {@code targetHeight} is
-         *                      smaller than the original dimensions, and generally only when
-         *                      the {@code BILINEAR} hint is specified)
-         * @param targetWidth   the desired width of the scaled instance,
-         *                      in pixels
-         * @param targetHeight  the desired height of the scaled instance,
-         *                      in pixels
+         * @param opt       options
+         *
          * @return a scaled version of the original {@code BufferedImage}
          */
         BufferedImage getScaledInstance(BufferedImage img, ScalingOptions opt);

@@ -18,7 +18,7 @@
   <parent>
     <groupId>com.openhtmltopdf</groupId>
     <artifactId>openhtmltopdf-parent</artifactId>
-    <version>0.0.1-RC6-SNAPSHOT</version>
+    <version>1.0.5-SNAPSHOT</version>
   </parent>
 
   <artifactId>openhtmltopdf-pdfbox</artifactId>
@@ -42,26 +42,84 @@
   </distributionManagement>
   <dependencies>
     <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.12</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
     	<groupId>org.apache.pdfbox</groupId>
     	<artifactId>pdfbox</artifactId>
-    	<version>2.0.3</version>
+    	<version>${pdfbox.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>xmpbox</artifactId>
+      <version>${pdfbox.version}</version>
     </dependency>
     <dependency>
       <groupId>com.openhtmltopdf</groupId>
       <artifactId>openhtmltopdf-core</artifactId>
       <version>${project.version}</version>
     </dependency>
+	  <dependency>
+		  <groupId>de.rototor.pdfbox</groupId>
+		  <artifactId>graphics2d</artifactId>
+		  <version>0.26</version>
+	  </dependency>
   </dependencies>
 
   <build>
 	  <resources>
 	    <resource>
 	      <directory>../</directory>
-	      <targetPath>${project.build.outputDirectory}/META-INF</targetPath>
+	      <targetPath>META-INF</targetPath>
 	      <includes>
 	        <include>LICENSE*</include>
 	      </includes>
 	    </resource>
 	  </resources>
+
+    <plugins>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>${open.jar.plugin.version}</version>
+        <configuration>
+          <archive>
+            <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+          </archive> 
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <version>${open.bundle.plugin.version}</version>
+        <configuration>
+          <instructions>
+            <Export-Package>*</Export-Package>
+          </instructions>
+        </configuration>
+
+        <executions>
+          <execution>
+            <id>bundle-manifest</id>
+            <phase>process-classes</phase>
+              <goals>
+                <goal>manifest</goal>
+              </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+
   </build>
+
+  <properties>
+    <pdfbox.version>2.0.20</pdfbox.version>
+  </properties>
+
 </project>

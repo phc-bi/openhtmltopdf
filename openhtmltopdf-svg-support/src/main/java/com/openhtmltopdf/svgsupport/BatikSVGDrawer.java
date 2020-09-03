@@ -1,104 +1,103 @@
 package com.openhtmltopdf.svgsupport;
 
+import java.util.Collections;
 import java.util.List;
-import java.util.logging.Level;
+import java.util.Set;
 
-import org.apache.batik.anim.dom.SVGDOMImplementation;
-import org.apache.batik.transcoder.TranscoderException;
-import org.apache.batik.transcoder.TranscoderInput;
-import org.w3c.dom.DOMImplementation;
-import org.w3c.dom.Document;
+import com.openhtmltopdf.extend.UserAgentCallback;
 import org.w3c.dom.Element;
-import org.w3c.dom.Node;
 
 import com.openhtmltopdf.css.sheet.FontFaceRule;
-import com.openhtmltopdf.extend.OutputDevice;
+import com.openhtmltopdf.css.style.CalculatedStyle;
+import com.openhtmltopdf.css.style.CssContext;
 import com.openhtmltopdf.extend.SVGDrawer;
 import com.openhtmltopdf.layout.SharedContext;
-import com.openhtmltopdf.render.RenderingContext;
+import com.openhtmltopdf.render.Box;
 import com.openhtmltopdf.svgsupport.PDFTranscoder.OpenHtmlFontResolver;
-import com.openhtmltopdf.util.XRLog;
 
 public class BatikSVGDrawer implements SVGDrawer {
+    private final Set<String> allowedProtocols;
+    public OpenHtmlFontResolver fontResolver;
+    private final boolean allowScripts;
+    private final boolean allowExternalResources;
+    private UserAgentCallback userAgentCallback;
+    
+    public enum SvgScriptMode {
+        SECURE,
+        INSECURE_ALLOW_SCRIPTS;
+    }
+    
+    public enum SvgExternalResourceMode {
+        SECURE,
+        INSECURE_ALLOW_EXTERNAL_RESOURCE_REQUESTS;
+    }
+    
+    /**
+     * Creates a <code>SVGDrawer</code> that can allow arbitary scripts to run or allow arbitary external
+     * resources to be requested.
+     * 
+     * IMPORTANT: External resources include the <code>file://</code> protocol and
+     * may give an attacker access to all files on the system. Scripts
+     * may call Javascript or Java code and take control of the system. Please be very sure you 
+     * are ONLY using trusted SVGs before using this constructor!
+     */
+    public BatikSVGDrawer(SvgScriptMode scriptMode, SvgExternalResourceMode externalResourceMode) {
+        this.allowScripts = scriptMode == SvgScriptMode.INSECURE_ALLOW_SCRIPTS;
+        this.allowExternalResources = externalResourceMode == SvgExternalResourceMode.INSECURE_ALLOW_EXTERNAL_RESOURCE_REQUESTS;
+        this.allowedProtocols = null;
+    }
 
-	private static final String DEFAULT_VP_WIDTH = "400";
-	private static final String DEFAULT_VP_HEIGHT = "400";
-	public OpenHtmlFontResolver fontResolver;
-	
-	@Override
-	public void importFontFaceRules(List<FontFaceRule> fontFaces, SharedContext shared) {
-		this.fontResolver = new OpenHtmlFontResolver();
-		this.fontResolver.importFontFaces(fontFaces, shared);
-	}
-	
-	@Override
-	public void drawSVG(Element svgElement, OutputDevice outputDevice, RenderingContext ctx, double x, double y, float dotsPerInch) {
+    /**
+     * Creates a <code>SVGDrawer</code> that can allow arbitary scripts to run and allow the loading of
+     * external resources with the specified protocols.
+     *
+     * @param scriptMode
+     * @param allowedProtocols
+     */
+    public BatikSVGDrawer(SvgScriptMode scriptMode, Set<String> allowedProtocols) {
+        this.allowScripts = scriptMode == SvgScriptMode.INSECURE_ALLOW_SCRIPTS;
+        this.allowExternalResources = false;
+        this.allowedProtocols = Collections.unmodifiableSet(allowedProtocols);
+    }
 
-		if (this.fontResolver == null) {
-			XRLog.general(Level.INFO, "importFontFaceRules has not been called for this pdf transcoder");
-			this.fontResolver = new OpenHtmlFontResolver();
-		}
-		
-		PDFTranscoder transcoder = new PDFTranscoder(outputDevice, ctx, x, y, this.fontResolver, dotsPerInch);
-		
-		try {
-			DOMImplementation impl = SVGDOMImplementation.getDOMImplementation();
-			Document newDocument = impl.createDocument(SVGDOMImplementation.SVG_NAMESPACE_URI, "svg", null);
-			
-			for (int i = 0; i < svgElement.getChildNodes().getLength(); i++)
-			{
-				Node importedNode = newDocument.importNode(svgElement.getChildNodes().item(i), true);
-				newDocument.getDocumentElement().appendChild(importedNode);
-			}
-			
-			if (svgElement.hasAttribute("width")) {
-				newDocument.getDocumentElement().setAttribute("width", svgElement.getAttribute("width"));
-			}
-			else {
-				newDocument.getDocumentElement().setAttribute("width", DEFAULT_VP_WIDTH);
-			}
-			
-			if (svgElement.hasAttribute("height")) {
-				newDocument.getDocumentElement().setAttribute("height", svgElement.getAttribute("height"));
-			}
-			else {
-				newDocument.getDocumentElement().setAttribute("height", DEFAULT_VP_HEIGHT);
-			}
+    /**
+     * Creates a <code>SVGDrawer</code> that does NOT allow scripts to run or external resources such
+     * as <code>file://</code> or <code>http://</code> protocol urls to be requested.
+     * 
+     * Recommended for most users.
+     */
+    public BatikSVGDrawer() {
+        this(SvgScriptMode.SECURE, SvgExternalResourceMode.SECURE);
+    }
 
-			TranscoderInput in = new TranscoderInput(newDocument);
-			transcoder.transcode(in, null);
-		} catch (TranscoderException e) {
-			XRLog.exception("Couldn't draw SVG.", e);
-		}
-	}
+    @Override
+    public void importFontFaceRules(List<FontFaceRule> fontFaces,
+            SharedContext shared) {
+        this.fontResolver = new OpenHtmlFontResolver();
+        this.fontResolver.importFontFaces(fontFaces, shared);
+    }
 
-	private int parseOrDefault(String num, int def) {
-		try {
-			return Integer.parseInt(num);
-		} catch (NumberFormatException e)
-		{
-			XRLog.general(Level.WARNING, "Invalid integer passed as dimension for SVG: " + num);
-			return def;
-		}
-	}
-	
-	@Override
-	public int getSVGWidth(Element e) {
-		if (e.hasAttribute("width")) {
-			return parseOrDefault(e.getAttribute("width"), Integer.parseInt(DEFAULT_VP_WIDTH));
-		}
-		else {
-			return Integer.parseInt(DEFAULT_VP_WIDTH);
-		}
-	}
+    @Override
+    public void withUserAgent(UserAgentCallback userAgentCallback) {
+        this.userAgentCallback = userAgentCallback;
+    }
 
-	@Override
-	public int getSVGHeight(Element e) {
-		if (e.hasAttribute("height")) {
-			return parseOrDefault(e.getAttribute("height"), Integer.parseInt(DEFAULT_VP_HEIGHT));
-		}
-		else {
-			return Integer.parseInt(DEFAULT_VP_HEIGHT);
-		}
-	}
+    @Override
+    public SVGImage buildSVGImage(Element svgElement, Box box, CssContext c,
+    		double cssWidth, double cssHeight, double dotsPerPixel) {
+    	
+    	double cssMaxWidth = CalculatedStyle.getCSSMaxWidth(c, box);
+    	double cssMaxHeight = CalculatedStyle.getCSSMaxHeight(c, box);
+    	
+        BatikSVGImage img = new BatikSVGImage(svgElement, box, cssWidth, cssHeight,
+                cssMaxWidth, cssMaxHeight, dotsPerPixel);
+        img.setFontResolver(fontResolver);
+        img.setUserAgentCallback(userAgentCallback);
+        img.setSecurityOptions(allowScripts, allowExternalResources, allowedProtocols);
+        return img;
+    }
+    
+    @Override
+    public void close() {
+    }
 }

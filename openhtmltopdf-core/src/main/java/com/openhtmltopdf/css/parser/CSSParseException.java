@@ -46,11 +46,12 @@ public class CSSParseException extends RuntimeException {
     
     public CSSParseException(Token found, Token[] expected, int line) {
         _found = found;
-        _expected = expected == null ? new Token[]{} : (Token[]) expected.clone(); 
+        _expected = expected == null ? new Token[]{} : expected.clone();
         _line = line;
         _genericMessage = null;
     }
     
+    @Override
     public String getMessage() {
         if (_genericMessage != null) {
             return _genericMessage + " at line " + (_line+1) + ".";
@@ -65,7 +66,7 @@ public class CSSParseException extends RuntimeException {
         if (tokens.length == 1) {
             return tokens[0].getExternalName();
         } else {
-            StringBuffer result = new StringBuffer();
+            StringBuilder result = new StringBuilder();
             if (tokens.length > 2) {
                 result.append("one of ");
             }

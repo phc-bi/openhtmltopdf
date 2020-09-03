@@ -19,51 +19,35 @@
  */
 package com.openhtmltopdf.css.parser;
 
-import java.io.IOException;
-import java.io.Reader;
-import java.io.StringReader;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.logging.Level;
-
-import org.w3c.dom.css.CSSPrimitiveValue;
-
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.MarginBoxName;
+import com.openhtmltopdf.css.constants.SVGProperty;
 import com.openhtmltopdf.css.extend.TreeResolver;
 import com.openhtmltopdf.css.newmatch.Selector;
 import com.openhtmltopdf.css.parser.property.PropertyBuilder;
-import com.openhtmltopdf.css.sheet.FontFaceRule;
-import com.openhtmltopdf.css.sheet.MediaRule;
-import com.openhtmltopdf.css.sheet.PageRule;
-import com.openhtmltopdf.css.sheet.PropertyDeclaration;
-import com.openhtmltopdf.css.sheet.Ruleset;
-import com.openhtmltopdf.css.sheet.RulesetContainer;
-import com.openhtmltopdf.css.sheet.Stylesheet;
-import com.openhtmltopdf.css.sheet.StylesheetInfo;
+import com.openhtmltopdf.css.sheet.*;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.ThreadCtx;
 import com.openhtmltopdf.util.XRLog;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
+import java.util.*;
+import java.util.logging.Level;
+
 public class CSSParser {
-    private static final Set SUPPORTED_PSEUDO_ELEMENTS;
-    private static final Set CSS21_PSEUDO_ELEMENTS;
+    private static final Set<String> SUPPORTED_PSEUDO_ELEMENTS;
+    private static final Set<String> CSS21_PSEUDO_ELEMENTS;
 
     static {
-        SUPPORTED_PSEUDO_ELEMENTS = new HashSet();
+        SUPPORTED_PSEUDO_ELEMENTS = new HashSet<>();
         SUPPORTED_PSEUDO_ELEMENTS.add("first-line");
         SUPPORTED_PSEUDO_ELEMENTS.add("first-letter");
         SUPPORTED_PSEUDO_ELEMENTS.add("before");
         SUPPORTED_PSEUDO_ELEMENTS.add("after");
 
-        CSS21_PSEUDO_ELEMENTS = new HashSet();
+        CSS21_PSEUDO_ELEMENTS = new HashSet<>();
         CSS21_PSEUDO_ELEMENTS.add("first-line");
         CSS21_PSEUDO_ELEMENTS.add("first-letter");
         CSS21_PSEUDO_ELEMENTS.add("before");
@@ -76,7 +60,7 @@ public class CSSParser {
     private CSSErrorHandler _errorHandler;
     private String _URI;
 
-    private Map _namespaces = new HashMap();
+    private Map<String, String> _namespaces = new HashMap<>();
     private boolean _supportCMYKColors;
 
     public CSSParser(CSSErrorHandler errorHandler) {
@@ -97,8 +81,7 @@ public class CSSParser {
 
     public Ruleset parseDeclaration(int origin, String text) {
         try {
-            // XXX Set this to something more reasonable
-            _URI = "style attribute";
+            _URI = ThreadCtx.get().sharedContext().getBaseURL();
             reset(new StringReader(text));
 
             skip_whitespace();
@@ -122,13 +105,13 @@ public class CSSParser {
         _URI = cssName + " property value";
         try {
             reset(new StringReader(expr));
-            List values = expr(
+            List<PropertyValue> values = expr(
                     cssName == CSSName.FONT_FAMILY ||
                     cssName == CSSName.FONT_SHORTHAND ||
                     cssName == CSSName.FS_PDF_FONT_ENCODING);
 
             PropertyBuilder builder = CSSName.getPropertyBuilder(cssName);
-            List props;
+            List<PropertyDeclaration> props;
             try {
                 props = builder.buildDeclarations(cssName, values, origin, false);
             } catch (CSSParseException e) {
@@ -141,7 +124,7 @@ public class CSSParser {
                         "Builder created " + props.size() + "properties, expected 1", getCurrentLine());
             }
 
-            PropertyDeclaration decl = (PropertyDeclaration)props.get(0);
+            PropertyDeclaration decl = props.get(0);
 
             return (PropertyValue)decl.getValue();
         } catch (IOException e) {
@@ -276,7 +259,7 @@ public class CSSParser {
                     	String resolved = ThreadCtx.get().sharedContext().getUserAgentCallback().resolveUri(baseUri, uri);
                     	
                     	if (resolved == null) {
-                    		XRLog.load(Level.INFO, "URI resolver rejected resolving CSS import at (" + uri + ")");
+                    	    XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.LOAD_URI_RESOLVER_REJECTED_RESOLVING_CSS_IMPORT_AT_URI, uri);
                     	}
                     	
                     	info.setUri(resolved);
@@ -784,7 +767,8 @@ public class CSSParser {
                         t, new Token[] { Token.TK_COMMA, Token.TK_LBRACE }, getCurrentLine());
             }
 
-            if (ruleset.getPropertyDeclarations().size() > 0) {
+            if (!ruleset.getPropertyDeclarations().isEmpty() ||
+                !ruleset.getInvalidPropertyDeclarations().isEmpty()) {
                 container.addContent(ruleset);
             }
         } catch (CSSParseException e) {
@@ -798,8 +782,8 @@ public class CSSParser {
 //    ;
     private void selector(Ruleset ruleset) throws IOException {
         //System.out.println("selector()");
-        List selectors = new ArrayList();
-        List combinators = new ArrayList();
+        List<Selector> selectors = new ArrayList<>();
+        List<Token> combinators = new ArrayList<>();
         selectors.add(simple_selector(ruleset));
         LOOP:
         while (true) {
@@ -832,18 +816,18 @@ public class CSSParser {
         ruleset.addFSSelector(mergeSimpleSelectors(selectors, combinators));
     }
 
-    private Selector mergeSimpleSelectors(List selectors, List combinators) {
+    private Selector mergeSimpleSelectors(List<Selector> selectors, List<Token> combinators) {
         int count = selectors.size();
         if (count == 1) {
-            return (Selector)selectors.get(0);
+            return selectors.get(0);
         }
 
         int lastDescendantOrChildAxis = Selector.DESCENDANT_AXIS;
         Selector result = null;
         for (int i = 0; i < count - 1; i++) {
-            Selector first = (Selector)selectors.get(i);
-            Selector second = (Selector)selectors.get(i+1);
-            Token combinator = (Token)combinators.get(i);
+            Selector first = selectors.get(i);
+            Selector second = selectors.get(i + 1);
+            Token combinator = combinators.get(i);
 
             if (first.getPseudoElement() != null) {
                 throw new CSSParseException(
@@ -872,6 +856,7 @@ public class CSSParser {
                     result = first;
                 }
                 first.setChainedSelector(second);
+                second.setAncestorSelector(first);
             } else {
                 second.setSiblingSelector(first);
                 if (result == null || result == first) {
@@ -879,7 +864,7 @@ public class CSSParser {
                 }
                 if (i > 0) {
                     for (int j = i-1; j >= 0; j--) {
-                        Selector selector = (Selector)selectors.get(j);
+                        Selector selector = selectors.get(j);
                         if (selector.getChainedSelector() == first) {
                             selector.setChainedSelector(second);
                             second.setAxis(lastDescendantOrChildAxis);
@@ -1009,13 +994,13 @@ public class CSSParser {
 
         String namespaceURI = null;
         if (prefix != null && prefix != TreeResolver.NO_NAMESPACE) {
-            namespaceURI = (String)_namespaces.get(prefix.toLowerCase());
+            namespaceURI = _namespaces.get(prefix.toLowerCase());
             if (namespaceURI == null) {
                 throw new CSSParseException("There is no namespace with prefix " + prefix + " defined",
                         getCurrentLine());
             }
         } else if (prefix == null && ! matchAttribute) {
-            namespaceURI = (String)_namespaces.get(null);
+            namespaceURI = _namespaces.get(null);
         }
 
         if (matchAttribute && name == null) {
@@ -1258,10 +1243,12 @@ public class CSSParser {
 
     private boolean checkCSSName(CSSName cssName, String propertyName) {
         if (cssName == null) {
-            _errorHandler.error(
+            if (!SVGProperty.properties().contains(propertyName)) {
+                _errorHandler.error(
                     _URI,
                     propertyName + " is an unrecognized CSS property at line "
                         + getCurrentLine() + ". Ignoring declaration.");
+            }
             return false;
         }
 
@@ -1302,7 +1289,7 @@ public class CSSParser {
                 if (t == Token.TK_COLON) {
                     skip_whitespace();
 
-                    List values = expr(
+                    List<PropertyValue> values = expr(
                             cssName == CSSName.FONT_FAMILY ||
                             cssName == CSSName.FONT_SHORTHAND ||
                             cssName == CSSName.FS_PDF_FONT_ENCODING);
@@ -1331,6 +1318,12 @@ public class CSSParser {
                             e.setLine(getCurrentLine());
                             error(e, "declaration", true);
                         }
+                    } else {
+                        // We need to keep invalid properties in case they are used by SVG, etc.
+                        ruleset.addInvalidProperty(
+                           new InvalidPropertyDeclaration(
+                                propertyName, values, ruleset.getOrigin(), important,
+                                ruleset.getPropertyDeclarations().size() + ruleset.getInvalidPropertyDeclarations().size()));
                     }
                 } else {
                     push(t);
@@ -1362,9 +1355,9 @@ public class CSSParser {
 //  expr
 //    : term [ operator term ]*
 //    ;
-    private List expr(boolean literal) throws IOException {
+    private List<PropertyValue> expr(boolean literal) throws IOException {
         //System.out.println("expr()");
-        List result = new ArrayList(10);
+        List<PropertyValue> result = new ArrayList<>(10);
         result.add(term(literal));
         LOOP: while (true) {
             Token t = la();
@@ -1400,6 +1393,7 @@ public class CSSParser {
                 case Token.URI:
                 case Token.HASH:
                 case Token.FUNCTION:
+                case Token.DIMENSION:
                     PropertyValue term = term(literal);
                     if (operatorToken != null) {
                         term.setOperator(operatorToken);
@@ -1476,15 +1470,44 @@ public class CSSParser {
         }
         PropertyValue result = null;
         switch (t.getType()) {
-            case Token.ANGLE:
             case Token.TIME:
             case Token.FREQ:
             case Token.DIMENSION:
-                throw new CSSParseException("Unsupported CSS unit " + extractUnit(t), getCurrentLine());
+                String unitType = extractUnit(t);
+
+                if ("rem".equals(unitType)) {
+                    result = new PropertyValue(
+                          CSSPrimitiveValue.CSS_REMS,
+                          sign*Float.parseFloat(extractNumber(t)),
+                          sign(sign) + getTokenValue(t));
+                    next();
+                    skip_whitespace();
+                } else {
+                    throw new CSSParseException("Unsupported CSS unit " + unitType, getCurrentLine());
+                }
+                break;
             case Token.NUMBER:
                 result = new PropertyValue(
                         CSSPrimitiveValue.CSS_NUMBER,
                         sign*Float.parseFloat(getTokenValue(t)),
+                        sign(sign) + getTokenValue(t));
+                next();
+                skip_whitespace();
+                break;
+            case Token.ANGLE:
+            	String unit = extractUnit(t);
+            	short type = CSSPrimitiveValue.CSS_UNKNOWN;
+
+            	if ("deg".equals(unit))
+            		type = CSSPrimitiveValue.CSS_DEG;
+            	else if ("rad".equals(unit))
+            		type = CSSPrimitiveValue.CSS_RAD;
+            	else if ("grad".equals(unit))
+            		type = CSSPrimitiveValue.CSS_GRAD;
+            	
+                result = new PropertyValue(
+                        type,
+                        sign*Float.parseFloat(extractNumber(t)),
                         sign(sign) + getTokenValue(t));
                 next();
                 skip_whitespace();
@@ -1614,7 +1637,7 @@ public class CSSParser {
         if (t == Token.TK_FUNCTION) {
             String f = getTokenValue(t);
             skip_whitespace();
-            List params = expr(false);
+            List<PropertyValue> params = expr(false);
             t = next();
             if (t != Token.TK_RPAREN) {
                 push(t);
@@ -1643,7 +1666,7 @@ public class CSSParser {
         return result;
     }
 
-    private FSCMYKColor createCMYKColorFromFunction(List params) {
+    private FSCMYKColor createCMYKColorFromFunction(List<PropertyValue> params) {
         if (params.size() != 4) {
             throw new CSSParseException(
                     "The cmyk() function must have exactly four parameters",
@@ -1653,7 +1676,7 @@ public class CSSParser {
         float[] colorComponents = new float[4];
 
         for (int i = 0; i < params.size(); i++) {
-            colorComponents[i] = parseCMYKColorComponent((PropertyValue)params.get(i), (i+1)); //Warning on the truncation?
+            colorComponents[i] = parseCMYKColorComponent(params.get(i), (i+1)); //Warning on the truncation?
         }
 
         return new FSCMYKColor(colorComponents[0], colorComponents[1], colorComponents[2], colorComponents[3]);
@@ -1681,7 +1704,7 @@ public class CSSParser {
         return result;
     }
 
-    private FSRGBColor createRGBColorFromFunction(List params) {
+    private FSRGBColor createRGBColorFromFunction(List<PropertyValue> params) {
         if (params.size() != 3) {
             throw new CSSParseException(
                     "The rgb() function must have exactly three parameters",
@@ -1692,7 +1715,7 @@ public class CSSParser {
         int green = 0;
         int blue = 0;
         for (int i = 0; i < params.size(); i++) {
-            PropertyValue value = (PropertyValue)params.get(i);
+            PropertyValue value = params.get(i);
             short type = value.getPrimitiveType();
             if (type != CSSPrimitiveValue.CSS_PERCENTAGE &&
                     type != CSSPrimitiveValue.CSS_NUMBER) {
@@ -1939,7 +1962,7 @@ public class CSSParser {
                 String uriResolved = ThreadCtx.get().sharedContext().getUserAgentCallback().resolveUri(_URI, uriResult);
 
                 if (uriResolved == null) {
-                	XRLog.load(Level.INFO, "URI resolver rejected resolving URI at (" + uriResult + ") in CSS stylehseet");
+                    XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.LOAD_URI_RESOLVER_REJECTED_RESOLVING_URI_AT_URI_IN_CSS_STYLESHEET, uriResult);
                 }
                 
                 return uriResolved == null ? "" : uriResolved;
@@ -1961,14 +1984,6 @@ public class CSSParser {
         }
     }
 
-    private boolean isRelativeURI(String uri) {
-        try {
-            return uri.length() > 0 && (uri.charAt(0) != '/' && ! new URI(uri).isAbsolute());
-        } catch (URISyntaxException e) {
-            return false;
-        }
-    }
-
     private int getCurrentLine() {
         return _lexer.yyline();
     }
@@ -1978,7 +1993,7 @@ public class CSSParser {
     }
 
     private static String processEscapes(char[] ch, int start, int end) {
-        StringBuffer result = new StringBuffer(ch.length + 10);
+        StringBuilder result = new StringBuilder(ch.length + 10);
 
         for (int i = start; i < end; i++) {
             char c = ch[i];

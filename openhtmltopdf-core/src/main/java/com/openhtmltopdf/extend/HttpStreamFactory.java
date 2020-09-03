@@ -1,9 +1,11 @@
 package com.openhtmltopdf.extend;
 
 /**
- * Represents a very simple http or https client.
+ * Alias interface to avoid breaking user code.
+ * @see FSStreamFactory
+ * @deprecated Use <code>FSStreamFactory</code> instead.
  */
-public interface HttpStreamFactory 
-{
-	public HttpStream getUrl(String url);
+@Deprecated
+public interface HttpStreamFactory extends FSStreamFactory {
+
 }

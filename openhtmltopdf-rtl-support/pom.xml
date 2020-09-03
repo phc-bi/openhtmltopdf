@@ -6,7 +6,7 @@
   <parent>
     <groupId>com.openhtmltopdf</groupId>
     <artifactId>openhtmltopdf-parent</artifactId>
-    <version>0.0.1-RC6-SNAPSHOT</version>
+    <version>1.0.5-SNAPSHOT</version>
   </parent>
 
   <artifactId>openhtmltopdf-rtl-support</artifactId>
@@ -34,7 +34,7 @@
     <dependency>
 	<groupId>com.ibm.icu</groupId>
 	<artifactId>icu4j</artifactId>
-	<version>56.1</version>
+	<version>59.1</version>
    </dependency>
     <dependency>
         <groupId>com.openhtmltopdf</groupId>
@@ -47,11 +47,49 @@
 	  <resources>
 	    <resource>
 	      <directory>../</directory>
-	      <targetPath>${project.build.outputDirectory}/META-INF</targetPath>
+	      <targetPath>META-INF</targetPath>
 	      <includes>
 	        <include>LICENSE*</include>
 	      </includes>
 	    </resource>
 	  </resources>
+
+    <plugins>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>${open.jar.plugin.version}</version>
+        <configuration>
+          <archive>
+            <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+          </archive> 
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <version>${open.bundle.plugin.version}</version>
+        <configuration>
+          <instructions>
+            <Export-Package>*</Export-Package>
+          </instructions>
+        </configuration>
+
+        <executions>
+          <execution>
+            <id>bundle-manifest</id>
+            <phase>process-classes</phase>
+              <goals>
+                <goal>manifest</goal>
+              </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+
+
   </build>
 </project>

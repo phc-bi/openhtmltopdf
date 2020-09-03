@@ -21,25 +21,24 @@ package com.openhtmltopdf.css.parser.property;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
-
-import org.w3c.dom.css.CSSPrimitiveValue;
-import org.w3c.dom.css.CSSValue;
 
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.IdentValue;
 import com.openhtmltopdf.css.parser.CSSParseException;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
+import com.openhtmltopdf.css.parser.CSSValue;
 import com.openhtmltopdf.css.parser.PropertyValue;
 import com.openhtmltopdf.css.sheet.PropertyDeclaration;
 
 public class QuotesPropertyBuilder extends AbstractPropertyBuilder {
 
-    public List buildDeclarations(CSSName cssName, List values, int origin, boolean important, boolean inheritAllowed) {
+    @Override
+    public List<PropertyDeclaration> buildDeclarations(CSSName cssName, List<PropertyValue> values, int origin, boolean important, boolean inheritAllowed) {
         if (values.size() == 1) {
-            PropertyValue value = (PropertyValue)values.get(0);
+            PropertyValue value = values.get(0);
             if (value.getCssValueType() == CSSValue.CSS_INHERIT) {
-                return Collections.EMPTY_LIST;
+                return Collections.emptyList();
             } else if (value.getPrimitiveType() == CSSPrimitiveValue.CSS_IDENT) {
                 IdentValue ident = checkIdent(CSSName.QUOTES, value);
                 if (ident == IdentValue.NONE) {
@@ -54,9 +53,8 @@ public class QuotesPropertyBuilder extends AbstractPropertyBuilder {
                     "Mismatched quotes " + values, -1);
         }
         
-        List resultValues = new ArrayList();
-        for (Iterator i = values.iterator(); i.hasNext(); ) {
-            PropertyValue value = (PropertyValue)i.next();
+        List<PropertyValue> resultValues = new ArrayList<>();
+        for (PropertyValue value : values) {
             
             if (value.getOperator() != null) {
                 throw new CSSParseException(
@@ -65,7 +63,7 @@ public class QuotesPropertyBuilder extends AbstractPropertyBuilder {
             
             short type = value.getPrimitiveType();
             if (type == CSSPrimitiveValue.CSS_STRING) {
-                resultValues.add(value.getStringValue());
+                resultValues.add(value);
             } else if (type == CSSPrimitiveValue.CSS_URI) {
                 throw new CSSParseException(
                         "URI is not allowed here", -1);
@@ -85,7 +83,7 @@ public class QuotesPropertyBuilder extends AbstractPropertyBuilder {
             return Collections.singletonList(
                     new PropertyDeclaration(CSSName.QUOTES, new PropertyValue(resultValues), important, origin));
         } else {
-            return Collections.EMPTY_LIST;
+            return Collections.emptyList();
         }
     }
 }

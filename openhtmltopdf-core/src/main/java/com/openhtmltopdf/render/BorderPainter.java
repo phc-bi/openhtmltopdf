@@ -20,19 +20,15 @@
 package com.openhtmltopdf.render;
 
 import java.awt.BasicStroke;
-import java.awt.Polygon;
 import java.awt.Rectangle;
-import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.Stroke;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Arc2D;
 import java.awt.geom.Area;
 import java.awt.geom.Path2D;
-import java.awt.geom.Point2D;
 
 import com.openhtmltopdf.css.constants.IdentValue;
-import com.openhtmltopdf.css.parser.FSColor;
 import com.openhtmltopdf.css.parser.FSRGBColor;
 import com.openhtmltopdf.css.style.BorderRadiusCorner;
 import com.openhtmltopdf.css.style.derived.BorderPropertySet;
@@ -50,7 +46,7 @@ public class BorderPainter {
      * Generates a full round rectangle that is made of bounds and border
      * @param bounds Dimmensions of the rect
      * @param border The border specs
-     * @param Set true if you want the inner bounds of borders
+     * @param inside true if you want the inner bounds of borders
      * @return A Path that is all sides of the round rectangle
      */
     public static Path2D generateBorderBounds(Rectangle bounds, BorderPropertySet border, boolean inside) {
@@ -393,12 +389,18 @@ public class BorderPainter {
         Path2D path = generateBorderShape(bounds, currentSide, border, false, .5f, 1);
         Area clip = new Area(generateBorderShape(bounds, currentSide, border, true, 0, 1));
         
-        Shape old_clip = outputDevice.getClip();
-        if(old_clip != null) {
-            // we need to respect the clip sent to us, get the intersection between the old and the new
-            clip.intersect(new Area(old_clip));
+        Shape old_clip = null;
+        if (!outputDevice.isFastRenderer()) {
+        	old_clip = outputDevice.getClip();
+            if(old_clip != null) {
+                // we need to respect the clip sent to us, get the intersection between the old and the new
+                clip.intersect(new Area(old_clip));
+             }
+             outputDevice.setClip(clip);
+        } else {
+        	outputDevice.pushClip(clip);
         }
-        outputDevice.setClip(clip);
+        
         if (currentSide == BorderPainter.TOP) {
             outputDevice.setColor(color.topColor());
             outputDevice.setStroke(new BasicStroke(2*(int) border.top(), BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, pattern, xOffset));
@@ -421,7 +423,12 @@ public class BorderPainter {
                     path, BorderPainter.BOTTOM, (int)border.bottom(), false);
         }
 
-        outputDevice.setClip(old_clip);
+        if (!outputDevice.isFastRenderer()) {
+            outputDevice.setClip(old_clip);
+        } else {
+        	outputDevice.popClip();
+        }
+        
         outputDevice.setStroke(old_stroke);
     }
 

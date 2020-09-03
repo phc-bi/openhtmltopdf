@@ -54,12 +54,9 @@ import com.openhtmltopdf.util.XRRuntimeException;
  */
 public class IdentValue implements FSDerivedValue {
     private static int maxAssigned = 0;
+    private static final Map<String, IdentValue> ALL_IDENT_VALUES = new HashMap<>();
 
-    /**
-     * Description of the Field
-     */
     private final String ident;
-
     public final int FS_ID;
 
     public final static IdentValue ABSOLUTE = addValue("absolute");
@@ -160,6 +157,7 @@ public class IdentValue implements FSDerivedValue {
     public final static IdentValue REPEAT_Y = addValue("repeat-y");
     public final static IdentValue RIDGE = addValue("ridge");
     public final static IdentValue RIGHT = addValue("right");
+    public final static IdentValue RTL = addValue("rtl");
     public final static IdentValue RUN_IN = addValue("run-in");
     public final static IdentValue SCROLL = addValue("scroll");
     public final static IdentValue SEPARATE = addValue("separate");
@@ -225,12 +223,38 @@ public class IdentValue implements FSDerivedValue {
 	public static final IdentValue STAR = addValue("star");
 	public static final IdentValue CHECK = addValue("check");
 	public static final IdentValue CROSS = addValue("cross");
-	
 
-    /**
-     * Description of the Field
+	/*
+	 * CSS 3 Transform Values
+	 */
+    public static final IdentValue MATRIX = addValue("matrix");
+    public static final IdentValue TRANSLATE = addValue("translate");
+    public static final IdentValue TRANSLATE_X = addValue("translateX");
+    public static final IdentValue TRANSLATE_Y = addValue("translateY");
+    public static final IdentValue SCALE = addValue("scale");
+    public static final IdentValue SCALE_X = addValue("scaleX");
+    public static final IdentValue SCALE_Y = addValue("scaleY");
+    public static final IdentValue ROTATE = addValue("rotate");
+    public static final IdentValue SKEW = addValue("skew");
+    public static final IdentValue SKEW_X = addValue("skewX");
+    public static final IdentValue SKEW_Y = addValue("skewY");
+
+    /*
+     * image-rendering
      */
-    private static Map ALL_IDENT_VALUES;
+    public static final IdentValue PIXELATED = addValue("pixelated");
+    public static final IdentValue CRISP_EDGES = addValue("crisp-edges");
+    
+    /*
+     * Box-sizing
+     */
+    public static final IdentValue BORDER_BOX = addValue("border-box");
+    public static final IdentValue CONTENT_BOX = addValue("content-box");
+
+    /*
+     * Column break. 
+     */
+    public static final IdentValue COLUMN = addValue("column");
 
     /**
      * Constructor for the IdentValue object
@@ -248,6 +272,7 @@ public class IdentValue implements FSDerivedValue {
      *
      * @return a string representation of the object.
      */
+    @Override
     public String toString() {
         return ident;
     }
@@ -262,22 +287,19 @@ public class IdentValue implements FSDerivedValue {
      * @return see desc.
      */
     public static IdentValue getByIdentString(String ident) {
-        IdentValue val = (IdentValue) ALL_IDENT_VALUES.get(ident);
+        IdentValue val = ALL_IDENT_VALUES.get(ident);
         if (val == null) {
             throw new XRRuntimeException("Ident named " + ident + " has no IdentValue instance assigned to it.");
         }
         return val;
     }
 
-    /**
-     * TODO: doc
-     */
     public static boolean looksLikeIdent(String ident) {
-        return (IdentValue) ALL_IDENT_VALUES.get(ident) != null;
+        return ALL_IDENT_VALUES.get(ident) != null;
     }
 
     public static IdentValue valueOf(String ident) {
-        return (IdentValue)ALL_IDENT_VALUES.get(ident);
+        return ALL_IDENT_VALUES.get(ident);
     }
 
     public static int getIdentCount() {
@@ -290,10 +312,7 @@ public class IdentValue implements FSDerivedValue {
      * @param ident The feature to be added to the Value attribute
      * @return Returns
      */
-    private final static synchronized IdentValue addValue(String ident) {
-        if (ALL_IDENT_VALUES == null) {
-            ALL_IDENT_VALUES = new HashMap();
-        }
+    private final static IdentValue addValue(String ident) {
         IdentValue val = new IdentValue(ident);
         ALL_IDENT_VALUES.put(ident, val);
         return val;
@@ -304,6 +323,7 @@ public class IdentValue implements FSDerivedValue {
      * Most of these throw exceptions--makes use of the interface easier in CS (avoids casting)
      */
 
+    @Override
     public boolean isDeclaredInherit() {
         return this == INHERIT;
     }
@@ -312,42 +332,51 @@ public class IdentValue implements FSDerivedValue {
         return this;
     }
 
+    @Override
     public float asFloat() {
         throw new XRRuntimeException("Ident value is never a float; wrong class used for derived value.");
     }
 
+    @Override
     public FSColor asColor() {
         throw new XRRuntimeException("Ident value is never a color; wrong class used for derived value.");
     }
 
+    @Override
     public float getFloatProportionalTo(CSSName cssName,
                                         float baseValue,
                                         CssContext ctx) {
         throw new XRRuntimeException("Ident value (" + toString() + ") is never a length; wrong class used for derived value.");
     }
 
+    @Override
     public String asString() {
         return toString();
     }
 
+    @Override
     public String[] asStringArray() {
         throw new XRRuntimeException("Ident value is never a string array; wrong class used for derived value.");
     }
 
+    @Override
     public IdentValue asIdentValue() {
         return this;
     }
 
+    @Override
     public boolean hasAbsoluteUnit() {
         // log and return false
         throw new XRRuntimeException("Ident value is never an absolute unit; wrong class used for derived value; this " +
                 "ident value is a " + this.asString());
     }
 
+    @Override
     public boolean isIdent() {
         return true;
     }
 
+    @Override
     public boolean isDependentOnFontSize() {
         return false;
     }

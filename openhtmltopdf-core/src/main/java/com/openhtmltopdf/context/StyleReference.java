@@ -22,11 +22,11 @@ package com.openhtmltopdf.context;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.logging.Level;
 
+import com.openhtmltopdf.css.sheet.FontFaceRule;
+import com.openhtmltopdf.util.LogMessageId;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -36,9 +36,12 @@ import com.openhtmltopdf.css.extend.AttributeResolver;
 import com.openhtmltopdf.css.extend.lib.DOMTreeResolver;
 import com.openhtmltopdf.css.newmatch.CascadedStyle;
 import com.openhtmltopdf.css.newmatch.PageInfo;
+import com.openhtmltopdf.css.newmatch.Selector;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
 import com.openhtmltopdf.css.sheet.PropertyDeclaration;
 import com.openhtmltopdf.css.sheet.Stylesheet;
 import com.openhtmltopdf.css.sheet.StylesheetInfo;
+import com.openhtmltopdf.css.style.CalculatedStyle;
 import com.openhtmltopdf.extend.NamespaceHandler;
 import com.openhtmltopdf.extend.UserAgentCallback;
 import com.openhtmltopdf.extend.UserInterface;
@@ -55,21 +58,9 @@ public class StyleReference {
      * resolution.
      */
     private SharedContext _context;
-
-    /**
-     * Description of the Field
-     */
     private NamespaceHandler _nsh;
-
-    /**
-     * Description of the Field
-     */
     private Document _doc;
-
-    /**
-     * Description of the Field
-     */
-    private StylesheetFactoryImpl _stylesheetFactory;
+    private final StylesheetFactoryImpl _stylesheetFactory;
 
     /**
      * Instance of our element-styles matching class. Will be null if new rules
@@ -77,17 +68,22 @@ public class StyleReference {
      */
     private com.openhtmltopdf.css.newmatch.Matcher _matcher;
 
-    /** */
     private UserAgentCallback _uac;
     
-    /**
-     * Default constructor for initializing members.
-     *
-     * @param userAgent PARAM
-     */
     public StyleReference(UserAgentCallback userAgent) {
         _uac = userAgent;
         _stylesheetFactory = new StylesheetFactoryImpl(userAgent);
+    }
+
+    /**
+     * Gets the style of the root element, should be html tag.
+     */
+    public CalculatedStyle getRootElementStyle() {
+        if (_context != null && _doc != null) {
+            return _context.getStyle(_doc.getDocumentElement());
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -104,8 +100,10 @@ public class StyleReference {
         _doc = doc;
         AttributeResolver attRes = new StandardAttributeResolver(_nsh, _uac, ui);
 
-        List infos = getStylesheets();
-        XRLog.match("media = " + _context.getMedia());
+        List<StylesheetInfo> infos = getStylesheets();
+
+        XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.MATCH_MEDIA_IS, _context.getMedia());
+        
         _matcher = new com.openhtmltopdf.css.newmatch.Matcher(
                 new DOMTreeResolver(), 
                 attRes, 
@@ -114,10 +112,10 @@ public class StyleReference {
                 _context.getMedia());
     }
     
-    private List readAndParseAll(List infos, String medium) {
-        List result = new ArrayList(infos.size() + 15);
-        for (Iterator i = infos.iterator(); i.hasNext(); ) {
-            StylesheetInfo info = (StylesheetInfo)i.next();
+    private List<Stylesheet> readAndParseAll(List<StylesheetInfo> infos, String medium) {
+        List<Stylesheet> result = new ArrayList<>(infos.size() + 15);
+        
+        for (StylesheetInfo info : infos) {
             if (info.appliesToMedia(medium)) {
                 Stylesheet sheet = info.getStylesheet();
                 
@@ -125,27 +123,21 @@ public class StyleReference {
                     sheet = _stylesheetFactory.getStylesheet(info);
                 }
                 
-                if (sheet!=null) {
+                if (sheet != null) {
                     if (sheet.getImportRules().size() > 0) {
                         result.addAll(readAndParseAll(sheet.getImportRules(), medium));
                     }
                     
                     result.add(sheet);
                 } else {
-                    XRLog.load(Level.WARNING, "Unable to load CSS from "+info.getUri());
+                    XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.LOAD_UNABLE_TO_LOAD_CSS_FROM_URI, info.getUri());
                 }
             }
         }
         
         return result;
     }
-    
-    /**
-     * Description of the Method
-     *
-     * @param e PARAM
-     * @return Returns
-     */
+
     public boolean isHoverStyled(Element e) {
         return _matcher.isHoverStyled(e);
     }
@@ -154,24 +146,25 @@ public class StyleReference {
      * Returns a Map keyed by CSS property names (e.g. 'border-width'), and the
      * assigned value as a SAC CSSValue instance. The properties should have
      * been matched to the element when the Context was established for this
-     * StyleReference on the Document to which the Element belongs. See {@link
-     * com.openhtmltopdf.swing.BasicPanel#setDocument(Document, java.net.URL)}
-     * for an example of how to establish a StyleReference and associate to a
-     * Document.
+     * StyleReference on the Document to which the Element belongs.
+     * 
+     * Only used by broken DOM inspector.
      *
      * @param e The DOM Element for which to find properties
      * @return Map of CSS property names to CSSValue instance assigned to it.
      */
-    public java.util.Map getCascadedPropertiesMap(Element e) {
-        CascadedStyle cs = _matcher.getCascadedStyle(e, false);//this is only for debug, I think
-        java.util.LinkedHashMap props = new java.util.LinkedHashMap();
-        for (java.util.Iterator i = cs.getCascadedPropertyDeclarations(); i.hasNext();) {
-            PropertyDeclaration pd = (PropertyDeclaration) i.next();
-
+    @Deprecated
+	public java.util.Map<String, CSSPrimitiveValue> getCascadedPropertiesMap(Element e) {
+        CascadedStyle cs = _matcher.getCascadedStyle(e, false);
+        
+		java.util.Map<String, CSSPrimitiveValue> props = new java.util.LinkedHashMap<>();
+		
+		for (PropertyDeclaration pd : cs.getCascadedPropertyDeclarations()) {
             String propName = pd.getPropertyName();
             CSSName cssName = CSSName.getByPropertyName(propName);
             props.put(propName, cs.propertyByName(cssName).getValue());
         }
+		
         return props;
     }
 
@@ -204,14 +197,25 @@ public class StyleReference {
         if (e == null) return CascadedStyle.emptyCascadedStyle;
         return _matcher.getCascadedStyle(e, restyle);
     }
-    
+
+    /**
+     * Given an element, returns all selectors and their rulesets
+     * for its descendants. Useful for getting the styles that should be
+     * applied to SVG, etc.
+     */
+    public String getCSSForAllDescendants(Element e) {
+        return _matcher.getCSSForAllDescendants(e);
+    }
+
     public PageInfo getPageStyle(String pageName, String pseudoPage) {
         return _matcher.getPageCascadedStyle(pageName, pseudoPage);
     }
 
     /**
      * Flushes any stylesheet associated with this stylereference (based on the user agent callback) that are in cache.
+     * Deprecated for now, until we fix caching, use a new <code>StylesheetFactory</code> each run.
      */
+    @Deprecated
     public void flushStyleSheets() {
         String uri = _uac.getBaseURL();
         StylesheetInfo info = new StylesheetInfo();
@@ -219,13 +223,13 @@ public class StyleReference {
         info.setOrigin(StylesheetInfo.AUTHOR);
         if (_stylesheetFactory.containsStylesheet(uri)) {
             _stylesheetFactory.removeCachedStylesheet(uri);
-            XRLog.cssParse("Removing stylesheet '" + uri + "' from cache by request.");
+            XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.CSS_PARSE_REMOVING_STYLESHEET_URI_FROM_CACHE_BY_REQUEST, uri);
         } else {
-            XRLog.cssParse("Requested removing stylesheet '" + uri + "', but it's not in cache.");
-
+            XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.CSS_PARSE_REQUESTED_REMOVING_STYLESHEET_URI_NOT_IN_CACHE, uri);
         }
     }
     
+    @Deprecated
     public void flushAllStyleSheets() {
         _stylesheetFactory.flushCachedStylesheets();
     }
@@ -233,13 +237,13 @@ public class StyleReference {
     /**
      * Gets StylesheetInfos for all stylesheets and inline styles associated
      * with the current document. Default (user agent) stylesheet and the inline
-     * style for the current media are loaded and cached in the
+     * style for the current media are loaded in the
      * StyleSheetFactory by URI.
      *
      * @return The stylesheets value
      */
-    private List getStylesheets() {
-        List infos = new LinkedList();
+    private List<StylesheetInfo> getStylesheets() {
+        List<StylesheetInfo> infos = new ArrayList<>();
         long st = System.currentTimeMillis();
 
         StylesheetInfo defaultStylesheet = _nsh.getDefaultStylesheet(_stylesheetFactory);
@@ -250,38 +254,32 @@ public class StyleReference {
         StylesheetInfo[] refs = _nsh.getStylesheets(_doc);
         int inlineStyleCount = 0;
         if (refs != null) {
-            for (int i = 0; i < refs.length; i++) {
+            for (StylesheetInfo ref : refs) {
                 String uri;
-                
-                if (! refs[i].isInline()) {
-                    uri = _uac.resolveURI(refs[i].getUri());
-                    refs[i].setUri(uri);
+
+                if (!ref.isInline()) {
+                    uri = _uac.resolveURI(ref.getUri());
+                    ref.setUri(uri);
                 } else {
-                    refs[i].setUri(_uac.getBaseURL() + "#inline_style_" + (++inlineStyleCount));
+                    ref.setUri(_uac.getBaseURL() + "#inline_style_" + (++inlineStyleCount));
                     Stylesheet sheet = _stylesheetFactory.parse(
-                            new StringReader(refs[i].getContent()), refs[i]);
-                    refs[i].setStylesheet(sheet);
-                    refs[i].setUri(null);
+                            new StringReader(ref.getContent()), ref);
+                    ref.setStylesheet(sheet);
+                    ref.setUri(null);
                 }
             }
+            infos.addAll(Arrays.asList(refs));
         }
-        infos.addAll(Arrays.asList(refs));
 
         // TODO: here we should also get user stylesheet from userAgent
 
         long el = System.currentTimeMillis() - st;
-        XRLog.load("TIME: parse stylesheets  " + el + "ms");
+        XRLog.log(Level.INFO, LogMessageId.LogMessageId1Param.LOAD_PARSE_STYLESHEETS_TIME, el);
 
         return infos;
     }
-    
-    public void removeStyle(Element e) {
-        if (_matcher != null) {
-            _matcher.removeStyle(e);
-        }
-    }
-    
-    public List getFontFaceRules() {
+
+    public List<FontFaceRule> getFontFaceRules() {
         return _matcher.getFontFaceRules();
     }
     

@@ -24,6 +24,7 @@ import java.awt.Rectangle;
 import com.openhtmltopdf.bidi.BidiReorderer;
 import com.openhtmltopdf.bidi.SimpleBidiReorderer;
 import com.openhtmltopdf.context.StyleReference;
+import com.openhtmltopdf.css.style.CalculatedStyle;
 import com.openhtmltopdf.css.style.CssContext;
 import com.openhtmltopdf.css.value.FontSpecification;
 import com.openhtmltopdf.extend.*;
@@ -36,8 +37,8 @@ import com.openhtmltopdf.layout.SharedContext;
  * @author jmarinacci
  *         November 16, 2004
  */
-public class RenderingContext implements CssContext {
-    protected SharedContext sharedContext;
+public class RenderingContext implements CssContext, Cloneable {
+    protected final SharedContext sharedContext;
     private OutputDevice outputDevice;
     private FontContext fontContext;
     
@@ -45,21 +46,28 @@ public class RenderingContext implements CssContext {
     
     private int pageNo;
     private PageBox page;
+    private int shadowPageNumber = -1;
     
     private Layer rootLayer;
     
     private int initialPageNo;
     
+    private boolean isFastRenderer = false;
+    private boolean inPageMargins = false;
+    
     /**
-     * <p/>
      * needs a new instance every run
      */
     public RenderingContext(SharedContext sharedContext) {
         this.sharedContext = sharedContext;
     }
-
-    public void setContext(SharedContext sharedContext) {
-        this.sharedContext = sharedContext;
+    
+    public boolean isFastRenderer() {
+    	return isFastRenderer;
+    }
+    
+    public void setFastRenderer(boolean isFast) {
+    	this.isFastRenderer = isFast;
     }
 
     public void setBaseURL(String url) {
@@ -67,7 +75,7 @@ public class RenderingContext implements CssContext {
     }
 
     public UserAgentCallback getUac() {
-        return sharedContext.getUac();
+        return sharedContext.getUserAgentCallback();
     }
 
     public String getBaseURL() {
@@ -94,6 +102,7 @@ public class RenderingContext implements CssContext {
         return sharedContext.getXHeight(getFontContext(), parentFont);
     }
 
+    @Override
     public TextRenderer getTextRenderer() {
         return sharedContext.getTextRenderer();
     }
@@ -134,6 +143,19 @@ public class RenderingContext implements CssContext {
     }
 
     public Rectangle getFixedRectangle() {
+        if (!outputDevice.isPDF() && !isPaged()) {
+            return new Rectangle(
+                 -this.page.getMarginBorderPadding(this, CalculatedStyle.LEFT),
+                 -this.page.getTop() - this.page.getMarginBorderPadding(this, CalculatedStyle.TOP),
+                 this.page.getContentWidth(this),
+                 this.page.getContentHeight(this));
+        } else if (!outputDevice.isPDF() && isPaged()) {
+            return new Rectangle(
+                    0, -this.page.getTop(), 
+                    this.page.getContentWidth(this),
+                    this.page.getContentHeight(this));
+        }
+
         Rectangle result;
         if (! isPrint()) {
             result = sharedContext.getFixedRectangle();
@@ -185,6 +207,7 @@ public class RenderingContext implements CssContext {
         this.outputDevice = outputDevice;
     }
 
+    @Override
     public FontContext getFontContext() {
         return fontContext;
     }
@@ -240,6 +263,34 @@ public class RenderingContext implements CssContext {
 
     public Box getBoxById(String id) {
         return sharedContext.getBoxById(id);
+    }
+    
+    public void setShadowPageNumber(int shadow) {
+        this.shadowPageNumber = shadow;
+    }
+    
+    /**
+     * @return overflow page number or -1 if this is not an overflow page.
+     */
+    public int getShadowPageNumber() {
+        return this.shadowPageNumber;
+    }
+    
+    public void setInPageMargins(boolean inMargin) {
+        this.inPageMargins = inMargin;
+    }
+    
+    public boolean isInPageMargins() {
+        return this.inPageMargins;
+    }
+    
+    @Override
+    public Object clone() {
+        try {
+            return super.clone();
+        } catch (CloneNotSupportedException e) {
+            return null;
+        }
     }
 }
 

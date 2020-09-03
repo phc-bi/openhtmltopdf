@@ -22,8 +22,11 @@ package com.openhtmltopdf.css.newmatch;
 import com.openhtmltopdf.css.extend.AttributeResolver;
 import com.openhtmltopdf.css.extend.TreeResolver;
 import com.openhtmltopdf.css.sheet.Ruleset;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
 
+import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 
 
@@ -51,7 +54,7 @@ public class Selector {
 
     private int _pos;//to distinguish between selectors of same specificity
 
-    private java.util.List conditions;
+    private List<Condition> conditions;
 
     public final static int DESCENDANT_AXIS = 0;
     public final static int CHILD_AXIS = 1;
@@ -66,6 +69,7 @@ public class Selector {
      * Give each a unique ID to be able to create a key to internalize Matcher.Mappers
      */
     private int selectorID;
+    private Selector _ancestorSelector;
     private static int selectorCount = 0;
 
     public Selector() {
@@ -89,8 +93,7 @@ public class Selector {
         if (_name == null || treeRes.matchesElement(e, _namespaceURI, _name)) {
             if (conditions != null) {
                 // all conditions need to be true
-                for (java.util.Iterator i = conditions.iterator(); i.hasNext();) {
-                    Condition c = (Condition) i.next();
+                for (Condition c : conditions) {
                     if (!c.matches(e, attRes, treeRes)) {
                         return false;
                     }
@@ -300,7 +303,7 @@ public class Selector {
     public void setPseudoElement(String pseudoElement) {
         if (_pe != null) {
             addUnsupportedCondition();
-            XRLog.match(Level.WARNING, "Trying to set more than one pseudo-element");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.MATCH_TRYING_TO_SET_MORE_THAN_ONE_PSEUDO_ELEMENT);
         } else {
             _specificityD++;
             _pe = pseudoElement;
@@ -409,7 +412,7 @@ public class Selector {
                 sibling = treeRes.getPreviousSiblingElement(e);
                 break;
             default:
-                XRLog.exception("Bad sibling axis");
+                XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.EXCEPTION_SELECTOR_BAD_SIBLING_AXIS);
         }
         return sibling;
     }
@@ -421,13 +424,86 @@ public class Selector {
      */
     private void addCondition(Condition c) {
         if (conditions == null) {
-            conditions = new java.util.ArrayList();
+            conditions = new java.util.ArrayList<>();
         }
         if (_pe != null) {
             conditions.add(Condition.createUnsupportedCondition());
-            XRLog.match(Level.WARNING, "Trying to append conditions to pseudoElement " + _pe);
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.MATCH_TRYING_TO_APPEND_CONDITIONS_TO_PSEUDO_ELEMENT, _pe);
         }
         conditions.add(c);
+    }
+
+    /**
+     * Prints the selector chain to a StringBuilder, stopping
+     * when it hits a selector in the stopAt set.
+     * 
+     * For example, given the selector 'body svg rect' and the stop
+     * set contains 'svg' then this will print 'rect' to the builder.
+     * 
+     * This method is used to recreate CSS selectors to pass to SVG or
+     * other plugins.
+     * 
+     * FIXME: Does not handle sibling selector.
+     */
+    public void toCSS(StringBuilder sb, Set<Selector> stopAt) {
+        if (stopAt.contains(this)) {
+            return;
+        }
+
+        Selector ancestor = this;
+
+        while (ancestor != null) {
+            Selector current = ancestor.getAncestorSelector();
+
+            if (current == null || stopAt.contains(current)) {
+                break;
+            }
+
+            ancestor = current;
+        }
+
+        Selector chained = ancestor;
+
+        if (chained.getAxis() == Selector.CHILD_AXIS) {
+            sb.append('>');
+            sb.append(' ');
+        }
+
+        if (chained._name != null) {
+            sb.append(chained._name);
+        }
+
+        if (chained.conditions != null) {
+            for (Condition condition : chained.conditions) {
+                condition.toCSS(sb);
+            }
+        }
+
+        sb.append(' ');
+
+        Selector next = chained.getChainedSelector();
+
+        while (next != null) {
+            if (next.getAxis() == Selector.CHILD_AXIS) {
+                sb.append('>');
+                sb.append(' ');
+            } else if (next.getAxis() == Selector.DESCENDANT_AXIS) {
+                // Do nothing, already have a space.
+            }
+
+            if (next._name != null) {
+                sb.append(next._name);
+            }
+
+            if (next.conditions != null) {
+                for (Condition condition : next.conditions) {
+                    condition.toCSS(sb);
+                }
+            }
+            sb.append(' ');
+
+            next = next.getChainedSelector();
+        }
     }
 
     /**
@@ -488,6 +564,56 @@ public class Selector {
     
     public void setNamespaceURI(String namespaceURI) {
         _namespaceURI = namespaceURI;
+    }
+
+    public void setAncestorSelector(Selector ancestor) {
+        _ancestorSelector = ancestor;
+    }
+
+    public Selector getAncestorSelector() {
+        return _ancestorSelector;
+    }
+
+    /**
+     * For debugging, prints the entire selector chain.
+     * FIXME: Does not handle sibling selectors.
+     */
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        Selector current = this;
+        Selector ancestor = this;
+
+        while (current != null) {
+            current = current.getAncestorSelector();
+            if (current != null) {
+                ancestor = current;
+            }
+        }
+
+        current = ancestor;
+
+        while (current != null) {
+            if (current.getAxis() == Selector.CHILD_AXIS) {
+                sb.append(" > ");
+            } else {
+                sb.append(' ');
+            }
+
+            if (current._name != null) {
+                sb.append(current._name);
+            }
+
+            if (current.conditions != null) {
+                for (Condition cond : current.conditions) {
+                    cond.toCSS(sb);
+                }
+            }
+
+            current = current.getChainedSelector();
+        }
+
+        return sb.toString();
     }
 }
 

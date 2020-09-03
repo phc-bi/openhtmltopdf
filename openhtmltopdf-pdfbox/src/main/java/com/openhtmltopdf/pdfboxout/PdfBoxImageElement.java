@@ -19,30 +19,38 @@
  */
 package com.openhtmltopdf.pdfboxout;
 
-import java.awt.Point;
-import java.awt.Rectangle;
-
 import com.openhtmltopdf.extend.FSImage;
 import com.openhtmltopdf.extend.ReplacedElement;
 import com.openhtmltopdf.layout.LayoutContext;
+import com.openhtmltopdf.layout.SharedContext;
+import com.openhtmltopdf.pdfboxout.PdfBoxLinkManager.IPdfBoxElementWithShapedLinks;
 import com.openhtmltopdf.render.BlockBox;
 import com.openhtmltopdf.render.RenderingContext;
+import com.openhtmltopdf.swing.ImageMapParser;
+import org.w3c.dom.Element;
 
-public class PdfBoxImageElement implements PdfBoxReplacedElement {
-    private FSImage _image;
+import java.awt.*;
+import java.util.Map;
+
+public class PdfBoxImageElement implements PdfBoxReplacedElement, IPdfBoxElementWithShapedLinks {
+    private final FSImage _image;
+    private final boolean interpolate;
 
     private Point _location = new Point(0, 0);
+    private final Map<Shape, String> imageMap;
 
-    public PdfBoxImageElement(FSImage image) {
+    public PdfBoxImageElement(Element e, FSImage image, SharedContext c, boolean interpolate) {
         _image = image;
+        this.interpolate = interpolate;
+        imageMap = ImageMapParser.findAndParseMap(e, c);
     }
 
     public int getIntrinsicWidth() {
-        return (int) _image.getWidth();
+        return _image.getWidth();
     }
 
     public int getIntrinsicHeight() {
-        return (int) _image.getHeight();
+        return _image.getHeight();
     }
 
     public Point getLocation() {
@@ -57,6 +65,11 @@ public class PdfBoxImageElement implements PdfBoxReplacedElement {
         return _image;
     }
 
+    @Override
+    public Map<Shape, String> getLinkMap() {
+        return imageMap;
+    }
+
     public void detach(LayoutContext c) {
     }
 
@@ -65,13 +78,16 @@ public class PdfBoxImageElement implements PdfBoxReplacedElement {
         return false;
     }
 
-    public void paint(RenderingContext c, PdfBoxOutputDevice outputDevice,
-            BlockBox box) {
-        Rectangle contentBounds = box.getContentAreaEdge(box.getAbsX(),
-                box.getAbsY(), c);
+    @Override
+    public void paint(RenderingContext c, PdfBoxOutputDevice outputDevice, BlockBox box) {
+        Rectangle contentBounds = box.getContentAreaEdge(box.getAbsX(), box.getAbsY(), c);
         ReplacedElement element = box.getReplacedElement();
-        outputDevice.drawImage(((PdfBoxImageElement) element).getImage(),
-                contentBounds.x, contentBounds.y);
+        
+        FSImage img = ((PdfBoxImageElement) element).getImage();
+        img.scale(contentBounds.width, contentBounds.height);
+        
+        outputDevice.drawImage(img,
+                contentBounds.x, contentBounds.y, interpolate);
     }
 
     public int getBaseline() {

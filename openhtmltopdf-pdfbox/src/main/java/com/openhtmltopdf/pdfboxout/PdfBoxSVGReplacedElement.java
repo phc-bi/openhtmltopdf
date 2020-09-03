@@ -1,52 +1,39 @@
 package com.openhtmltopdf.pdfboxout;
 
-import java.awt.Point;
+import com.openhtmltopdf.css.style.CssContext;
+import com.openhtmltopdf.extend.SVGDrawer;
+import com.openhtmltopdf.extend.SVGDrawer.SVGImage;
+import com.openhtmltopdf.layout.LayoutContext;
+import com.openhtmltopdf.layout.SharedContext;
+import com.openhtmltopdf.pdfboxout.PdfBoxLinkManager.IPdfBoxElementWithShapedLinks;
+import com.openhtmltopdf.render.BlockBox;
+import com.openhtmltopdf.render.Box;
+import com.openhtmltopdf.render.RenderingContext;
+import com.openhtmltopdf.swing.ImageMapParser;
 
 import org.w3c.dom.Element;
 
-import com.openhtmltopdf.extend.SVGDrawer;
-import com.openhtmltopdf.layout.LayoutContext;
-import com.openhtmltopdf.render.BlockBox;
-import com.openhtmltopdf.render.RenderingContext;
+import java.awt.*;
+import java.util.Map;
 
-public class PdfBoxSVGReplacedElement implements PdfBoxReplacedElement {
-    private final Element e;
-    private final SVGDrawer svg;
+public class PdfBoxSVGReplacedElement implements PdfBoxReplacedElement, IPdfBoxElementWithShapedLinks {
+    private final SVGImage svgImage;
+    private final Map<Shape, String> imageMap;
     private Point point = new Point(0, 0);
-    private final int width;
-    private final int height;
-    private final int dotsPerPixel;
     
-    public PdfBoxSVGReplacedElement(Element e, SVGDrawer svgImpl, int cssWidth, int cssHeight, int dotsPerPixel) {
-        this.e = e;
-        this.svg = svgImpl;
-        this.width = cssWidth;
-        this.height = cssHeight;
-        this.dotsPerPixel = dotsPerPixel;
+    public PdfBoxSVGReplacedElement(Element e, SVGDrawer svgImpl, int cssWidth, int cssHeight, Box box, CssContext css, SharedContext c) {
+        this.svgImage = svgImpl.buildSVGImage(e, box, css, cssWidth, cssHeight, c.getDotsPerPixel());
+        imageMap = ImageMapParser.findAndParseMap(e, c);
     }
 
     @Override
     public int getIntrinsicWidth() {
-        if (this.width >= 0) {
-            // CSS takes precedence over width and height defined on element.
-            return this.width;
-        }
-        else {
-            // Seems to need dots rather than pixels.
-            return this.svg.getSVGWidth(e) * this.dotsPerPixel;
-        }
+        return this.svgImage.getIntrinsicWidth();
     }
 
     @Override
     public int getIntrinsicHeight() {
-        if (this.height >= 0) {
-            // CSS takes precedence over width and height defined on element.
-            return this.height;
-        }
-        else {
-            // Seems to need dots rather than pixels.
-            return this.svg.getSVGHeight(e) * this.dotsPerPixel;
-        }
+        return this.svgImage.getIntrinsicHeight();
     }
 
     @Override
@@ -80,6 +67,11 @@ public class PdfBoxSVGReplacedElement implements PdfBoxReplacedElement {
 
     @Override
     public void paint(RenderingContext c, PdfBoxOutputDevice outputDevice, BlockBox box) {
-        svg.drawSVG(e, outputDevice, c, point.getX(), point.getY(), this.dotsPerPixel * 96f);
+        svgImage.drawSVG(outputDevice, c, point.getX(), point.getY());
+    }
+
+    @Override
+    public Map<Shape, String> getLinkMap() {
+        return imageMap;
     }
 }

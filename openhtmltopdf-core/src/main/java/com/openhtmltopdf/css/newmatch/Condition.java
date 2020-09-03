@@ -24,8 +24,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.w3c.dom.Element;
-
 import com.openhtmltopdf.css.extend.AttributeResolver;
 import com.openhtmltopdf.css.extend.TreeResolver;
 import com.openhtmltopdf.css.parser.CSSParseException;
@@ -39,6 +37,7 @@ import com.openhtmltopdf.css.parser.CSSParseException;
 abstract class Condition {
 
     abstract boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes);
+    abstract void toCSS(StringBuilder sb);
 
     /**
      * the CSS condition [attribute]
@@ -207,6 +206,7 @@ abstract class Condition {
             _value = value;
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             if (attRes == null) {
                 return false;
@@ -217,6 +217,17 @@ abstract class Condition {
             }
             
             return compare(val, _value);
+        }
+
+        protected void toCSS(StringBuilder sb, String type) {
+            sb.append('[');
+            sb.append(_name);
+            sb.append(type);
+            sb.append('=');
+            sb.append('\"');
+            sb.append(_value);
+            sb.append('\"');
+            sb.append(']');
         }
     }
 
@@ -238,8 +249,16 @@ abstract class Condition {
             return true;
         }
         
+        @Override
         protected boolean compare(String attrValue, String conditionValue) {
             throw new UnsupportedOperationException();
+        }
+        
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append('[');
+            sb.append(_name);
+            sb.append(']');
         }
     }
     
@@ -248,8 +267,14 @@ abstract class Condition {
             super(namespaceURI, name, value);
         }
 
+        @Override
         protected boolean compare(String attrValue, String conditionValue) {
             return attrValue.equals(conditionValue);
+        }
+
+        @Override
+        void toCSS(StringBuilder sb) {
+            toCSS(sb, "");
         }
     }
     
@@ -258,8 +283,14 @@ abstract class Condition {
             super(namespaceURI, name, value);
         }
 
+        @Override
         protected boolean compare(String attrValue, String conditionValue) {
             return attrValue.startsWith(conditionValue);
+        }
+
+        @Override
+        void toCSS(StringBuilder sb) {
+            toCSS(sb, "^");
         }
     }
     
@@ -268,8 +299,14 @@ abstract class Condition {
             super(namespaceURI, name, value);
         }
 
+        @Override
         protected boolean compare(String attrValue, String conditionValue) {
             return attrValue.endsWith(conditionValue);
+        }
+
+        @Override
+        void toCSS(StringBuilder sb) {
+            toCSS(sb, "$");
         }
     }
     
@@ -278,16 +315,23 @@ abstract class Condition {
             super(namespaceURI, name, value);
         }
 
+        @Override
         protected boolean compare(String attrValue, String conditionValue) {
             return attrValue.indexOf(conditionValue) > -1;
         }
+
+        @Override
+        void toCSS(StringBuilder sb) {
+            toCSS(sb, "*");
+        }
     }
-    
+
     private static class AttributeMatchesListCondition extends AttributeCompareCondition {
         AttributeMatchesListCondition(String namespaceURI, String name, String value) {
             super(namespaceURI, name, value);
         }
         
+        @Override
         protected boolean compare(String attrValue, String conditionValue) {
             String[] ca = split(attrValue, ' ');
             boolean matched = false;
@@ -298,6 +342,11 @@ abstract class Condition {
             }
             return matched;
         }
+
+        @Override
+        void toCSS(StringBuilder sb) {
+            toCSS(sb, "~");
+        }
     }
 
     private static class AttributeMatchesFirstPartCondition extends AttributeCompareCondition {
@@ -305,12 +354,18 @@ abstract class Condition {
             super(namespaceURI, name, value);
         }
         
+        @Override
         protected boolean compare(String attrValue, String conditionValue) {
             String[] ca = split(attrValue, '-');
             if (conditionValue.equals(ca[0])) {
                 return true;
             }
             return false;
+        }
+        
+        @Override
+        void toCSS(StringBuilder sb) {
+            toCSS(sb, "|");
         }
     }
 
@@ -322,6 +377,7 @@ abstract class Condition {
             _paddedClassName = " " + className + " ";
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             if (attRes == null) {
                 return false;
@@ -337,6 +393,11 @@ abstract class Condition {
             return (" " + c + " ").indexOf(_paddedClassName) != -1;
         }
 
+        @Override
+        public void toCSS(StringBuilder sb) {
+            sb.append('.');
+            sb.append(_paddedClassName.substring(1, _paddedClassName.length() - 1));
+        }
     }
 
     private static class IDCondition extends Condition {
@@ -347,6 +408,7 @@ abstract class Condition {
             _id = id;
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             if (attRes == null) {
                 return false;
@@ -357,6 +419,11 @@ abstract class Condition {
             return true;
         }
 
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append('#');
+            sb.append(_id);
+        }
     }
 
     private static class LangCondition extends Condition {
@@ -366,6 +433,7 @@ abstract class Condition {
             _lang = lang;
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             if (attRes == null) {
                 return false;
@@ -384,6 +452,12 @@ abstract class Condition {
             return false;
         }
 
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append(":lang(");
+            sb.append(_lang);
+            sb.append(')');
+        }
     }
 
     private static class FirstChildCondition extends Condition {
@@ -391,10 +465,15 @@ abstract class Condition {
         FirstChildCondition() {
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             return treeRes.isFirstChildElement(e);
         }
 
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append(":first-child");
+        }
     }
     
     private static class LastChildCondition extends Condition {
@@ -402,10 +481,15 @@ abstract class Condition {
         LastChildCondition() {
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             return treeRes.isLastChildElement(e);
         }
-
+        
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append(":last-child");
+        }
     }
 
     private static class NthChildCondition extends Condition {
@@ -414,12 +498,15 @@ abstract class Condition {
 
         private final int a;
         private final int b;
+        private final String input;
 
-        NthChildCondition(int a, int b) {
+        NthChildCondition(int a, int b, String input) {
             this.a = a;
             this.b = b;
+            this.input = input;
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             // getPositionOfElement() starts at 0, CSS spec starts at 1
             int position = treeRes.getPositionOfElement(e)+1;
@@ -435,16 +522,23 @@ abstract class Condition {
             }
         }
 
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append(":nth-child(");
+            sb.append(input);
+            sb.append(')');
+        }
+
         static NthChildCondition fromString(String number) {
             number = number.trim().toLowerCase();
 
             if ("even".equals(number)) {
-                return new NthChildCondition(2, 0);
+                return new NthChildCondition(2, 0, number);
             } else if ("odd".equals(number)) {
-                return new NthChildCondition(2, 1);
+                return new NthChildCondition(2, 1, number);
             } else {
                 try {
-                    return new NthChildCondition(0, Integer.parseInt(number));
+                    return new NthChildCondition(0, Integer.parseInt(number), number);
                 } catch (NumberFormatException e) {
                     Matcher m = pattern.matcher(number);
 
@@ -460,7 +554,7 @@ abstract class Condition {
                             b *= -1;
                         }
 
-                        return new NthChildCondition(a, b);
+                        return new NthChildCondition(a, b, number);
                     }
                 }
             }
@@ -472,9 +566,15 @@ abstract class Condition {
         EvenChildCondition() {
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             int position = treeRes.getPositionOfElement(e);
             return position >= 0 && position % 2 == 0;
+        }
+
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append(":nth-child(even)");
         }
     }
     
@@ -483,9 +583,15 @@ abstract class Condition {
         OddChildCondition() {
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             int position = treeRes.getPositionOfElement(e);
             return position >= 0 && position % 2 == 1;
+        }
+
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append(":nth-child(odd)");
         }
     }
 
@@ -494,10 +600,15 @@ abstract class Condition {
         LinkCondition() {
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             return attRes.isLink(e);
         }
 
+        @Override
+        void toCSS(StringBuilder sb) {
+            sb.append(":link");
+        }
     }
 
     /**
@@ -508,17 +619,22 @@ abstract class Condition {
         UnsupportedCondition() {
         }
 
+        @Override
         boolean matches(Object e, AttributeResolver attRes, TreeResolver treeRes) {
             return false;
         }
 
+        @Override
+        void toCSS(StringBuilder sb) {
+            // Nothing we can do...
+        }
     }
     
     private static String[] split(String s, char ch) {
         if (s.indexOf(ch) == -1) {
             return new String[] { s };
         } else {
-            List result = new ArrayList();
+            List<String> result = new ArrayList<>();
             
             int last = 0;
             int next = 0;
@@ -534,7 +650,7 @@ abstract class Condition {
                 result.add(s.substring(last));
             }
             
-            return (String[])result.toArray(new String[result.size()]);
+            return result.toArray(new String[result.size()]);
         }
     }    
 }

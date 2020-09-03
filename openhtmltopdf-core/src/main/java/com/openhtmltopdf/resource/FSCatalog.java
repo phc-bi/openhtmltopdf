@@ -20,6 +20,7 @@
  */
 package com.openhtmltopdf.resource;
 
+import com.openhtmltopdf.util.LogMessageId;
 import org.xml.sax.*;
 import org.xml.sax.helpers.DefaultHandler;
 
@@ -28,8 +29,7 @@ import com.openhtmltopdf.util.XRRuntimeException;
 
 import java.io.BufferedInputStream;
 import java.io.InputStream;
-import java.io.IOException;
-import java.net.URL;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -41,24 +41,21 @@ import java.util.logging.Level;
  * files, and is useful when there are many schemas, or when schemas are broken
  * into many smaller files. Currently FSCatalog only supports the very simple
  * mapping of public id to local URI using the public element in the catalog XML.
- * <p/>
+ * </p>
  * <p>FSCatalog is not an EntityResolver; it only parses a catalog file. See
  * {@link FSEntityResolver} for entity resolution.
- * <p/>
+ * </p>
  * <p>To use, instantiate the class, and call {@link #parseCatalog(InputSource)}
  * to retrieve a {@link java.util.Map} keyed by public ids. The class uses
  * an XMLReader instance retrieved via {@link XMLResource#newXMLReader()}, so
  * XMLReader configuration (and specification) follows that of the standard XML
  * parsing in Flying Saucer.
- * <p/>
- * <p>This class is not safe for multi-threaded access.
+ * </p>
+ * <p>This class is not safe for multi-threaded access.</p>
  *
  * @author Patrick Wright
  */
 public class FSCatalog {
-    /**
-     * Default constructor
-     */
     public FSCatalog() {
     }
 
@@ -68,25 +65,13 @@ public class FSCatalog {
      *
      * @param catalogURI A String URI to a catalog XML file on the classpath.
      */
-    public Map parseCatalog(String catalogURI) {
-        URL url;
-        Map map = null;
-        InputStream s = null;
-        try {
-            url = FSCatalog.class.getClassLoader().getResource(catalogURI);
-            s = new BufferedInputStream(url.openStream());
-            map = parseCatalog(new InputSource(s));
+    public Map<String, String> parseCatalog(String catalogURI) {
+        Map<String, String> map = null;
+        try (InputStream in = FSCatalog.class.getResourceAsStream(catalogURI)){
+            map = parseCatalog(new InputSource(new BufferedInputStream(in)));
         } catch (Exception ex) {
-            XRLog.xmlEntities(Level.WARNING, "Could not open XML catalog from URI '" + catalogURI + "'", ex);
-            map = new HashMap();
-        } finally {
-            try {
-                if (s != null) {
-                    s.close();
-                }
-            } catch (IOException e) {
-                // ignore..
-            }
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.XML_ENTITIES_COULD_NOT_OPEN_XML_CATALOG_FROM_URI, catalogURI, ex);
+            map = Collections.emptyMap();
         }
         return map;
     }
@@ -97,7 +82,7 @@ public class FSCatalog {
      *
      * @param inputSource A SAX InputSource to a catalog XML file on the classpath.
      */
-    public Map parseCatalog(InputSource inputSource) {
+    public Map<String, String> parseCatalog(InputSource inputSource) {
         XMLReader xmlReader = XMLResource.newXMLReader();
 
         CatalogContentHandler ch = new CatalogContentHandler();
@@ -123,19 +108,19 @@ public class FSCatalog {
             xmlReader.setErrorHandler(new ErrorHandler() {
                 public void error(SAXParseException ex) {
                     if (XRLog.isLoggingEnabled()) {
-                        XRLog.xmlEntities(Level.WARNING, ex.getMessage());
+                        XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.XML_ENTITIES_EXCEPTION_MESSAGE, ex.getMessage());
                     }
                 }
 
                 public void fatalError(SAXParseException ex) {
                     if (XRLog.isLoggingEnabled()) {
-                        XRLog.xmlEntities(Level.WARNING, ex.getMessage());
+                        XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.XML_ENTITIES_EXCEPTION_MESSAGE, ex.getMessage());
                     }
                 }
 
                 public void warning(SAXParseException ex) {
                     if (XRLog.isLoggingEnabled()) {
-                        XRLog.xmlEntities(Level.WARNING, ex.getMessage());
+                        XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.XML_ENTITIES_EXCEPTION_MESSAGE, ex.getMessage());
                     }
                 }
             });
@@ -151,16 +136,16 @@ public class FSCatalog {
      * parse, then call getEntityMap().
      */
     private static class CatalogContentHandler extends DefaultHandler {
-        private Map entityMap;
+        private final Map<String, String> entityMap;
 
         public CatalogContentHandler() {
-            this.entityMap = new HashMap();
+            this.entityMap = new HashMap<>();
         }
 
         /**
          * Returns a Map of public Ids to local URIs
          */
-        public Map getEntityMap() {
+        public Map<String, String> getEntityMap() {
             return entityMap;
         }
 
@@ -183,19 +168,11 @@ public class FSCatalog {
     private void setFeature(XMLReader xmlReader, String featureUri, boolean value) {
         try {
             xmlReader.setFeature(featureUri, value);
-
-            XRLog.xmlEntities(Level.FINE, "SAX Parser feature: " +
-                    featureUri.substring(featureUri.lastIndexOf("/")) +
-                    " set to " +
-                    xmlReader.getFeature(featureUri));
+            XRLog.log(Level.FINE, LogMessageId.LogMessageId2Param.XML_ENTITIES_SAX_FEATURE_SET, featureUri.substring(featureUri.lastIndexOf("/")), Boolean.toString(xmlReader.getFeature(featureUri)));
         } catch (SAXNotSupportedException ex) {
-            XRLog.xmlEntities(Level.WARNING,
-                    "SAX feature not supported on this XMLReader: " + featureUri);
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.XML_ENTITIES_SAX_FEATURE_NOT_SUPPORTED, featureUri);
         } catch (SAXNotRecognizedException ex) {
-            XRLog.xmlEntities(Level.WARNING,
-                    "SAX feature not recognized on this XMLReader: " +
-                    featureUri + ". Feature may be properly named, but not recognized by this parser.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.XML_ENTITIES_SAX_FEATURE_NOT_RECOGNIZED, featureUri);
         }
     }
-}// end class
-
+}

@@ -1,12 +1,29 @@
 html, address,
+article,
+aside,
 blockquote,
-body, dd, div,
-dl, dt, fieldset, form,
+body,
+details,
+dialog,
+dd, div,
+dl, dt, fieldset,
+figcaption,
+figure,
+footer,
+form,
 frame, frameset,
 h1, h2, h3, h4,
-h5, h6, noframes,
+h5, h6,
+header,
+hgroup,
+main,
+nav,
+noframes,
 ol, p, ul, center,
-dir, hr, menu, pre, object, svg   { display: block }
+dir, hr, menu, pre,
+section,
+object, svg { display: block }
+math { display: inline-block; }
 li              { display: list-item }
 head, script    { display: none }
 body            { margin: 8px }
@@ -52,8 +69,8 @@ select > option, openhtmltopdf-combo > option { display: none; }
 input[type=submit]::before, input[type=reset]::before { content: attr(value); height: 1.8em; display: inline-block; }
 button { height: 1.8em; }
 textarea { width: 10em; height: 5em; padding: 4px; background-color: white; border: 1px solid black; }
-
-/* input[type=hidden] { display: none } */        /* don't generate boxes for hidden inputs.*/
+/* Generate a hidden box for hidden controls, so we can process them in paint background, like all the other form controls. */
+input[type=hidden] { width: 1px; height: 1px; position: absolute; background-color: transparent; }
 big             { font-size: 1.17em }
 small           { font-size: .83em }
 s, strike, del  { text-decoration: line-through }
@@ -220,4 +237,17 @@ hr[size="1"] {
 /* Quirk: give form margin for compat (b=41806) (from Firefox) */
 form{
  margin: 0 0 1em 0;
+}
+
+bdi {
+ direction: auto;
+}
+[dir=ltr], bdi[dir=ltr] {
+ direction: ltr;
+}
+[dir=rtl], bdi[dir=rtl] {
+ direction: rtl;
+}
+[dir=auto] {
+ direction: auto;
 }

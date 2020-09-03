@@ -29,9 +29,9 @@ import java.util.logging.Level;
 
 import com.openhtmltopdf.layout.SharedContext;
 import com.openhtmltopdf.resource.ImageResource;
-import com.openhtmltopdf.swing.FSCacheKey;
 import com.openhtmltopdf.swing.NaiveUserAgent;
 import com.openhtmltopdf.util.ImageUtil;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
 
 public class PdfBoxUserAgent extends NaiveUserAgent {
@@ -59,16 +59,12 @@ public class PdfBoxUserAgent extends NaiveUserAgent {
         String uriResolved = resolveURI(uriStr);
         
         if (uriResolved == null) {
-           XRLog.load(Level.INFO, "URI resolver rejected loading image at (" + uriStr + ")");
+            XRLog.log(Level.INFO, LogMessageId.LogMessageId2Param.LOAD_URI_RESOLVER_REJECTED_LOADING_AT_URI, "image", uriStr);
            return new ImageResource(uriStr, null);
         }
         
         ImageResource resource = _imageCache.get(uriResolved);
         
-        if (resource == null) {
-            resource = (ImageResource) _externalCache.get(new FSCacheKey(uriResolved, PdfBoxImage.class));
-        }
-
         if (resource != null && resource.getImage() instanceof PdfBoxImage) {
             // Make copy of PdfBoxImage so we don't stuff up the cache.
             PdfBoxImage original = (PdfBoxImage) resource.getImage();
@@ -76,10 +72,13 @@ public class PdfBoxUserAgent extends NaiveUserAgent {
             return new ImageResource(resource.getImageUri(), copy);
         }
         
-        if (ImageUtil.isEmbeddedBase64Image(uriStr)) {
-            resource = loadEmbeddedBase64ImageResource(uriStr);
-            _outputDevice.realizeImage((PdfBoxImage) resource.getImage());
-            _imageCache.put(uriResolved, resource);
+        if (ImageUtil.isEmbeddedBase64Image(uriResolved)) {
+            resource = loadEmbeddedBase64ImageResource(uriResolved);
+            // see issue 474: getImage can be null, as the loading of the embedded base64 resource may fail.
+            if (resource.getImage() != null) {
+                _outputDevice.realizeImage((PdfBoxImage) resource.getImage());
+                _imageCache.put(uriResolved, resource);
+            }
         } else {
             InputStream is = openStream(uriResolved);
             
@@ -106,11 +105,8 @@ public class PdfBoxUserAgent extends NaiveUserAgent {
                         resource = new ImageResource(uriResolved, fsImage);
                     }
                     _imageCache.put(uriResolved, resource);
-                    _externalCache.put(new FSCacheKey(uriResolved, PdfBoxImage.class), resource);
                 } catch (Exception e) {
-                    XRLog.exception(
-                            "Can't read image file; unexpected problem for URI '"
-                                    + uriStr + "'", e);
+                    XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_CANT_READ_IMAGE_FILE_FOR_URI, uriStr, e);
                 } finally {
                     try {
                         is.close();
@@ -136,7 +132,7 @@ public class PdfBoxUserAgent extends NaiveUserAgent {
             scaleToOutputResolution(fsImage);
             return new ImageResource(null, fsImage);
         } catch (Exception e) {
-            XRLog.exception("Can't read XHTML embedded image.", e);
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.EXCEPTION_CANT_READ_XHTML_EMBEDDED_IMAGE, e);
         }
         return new ImageResource(null, null);
     }

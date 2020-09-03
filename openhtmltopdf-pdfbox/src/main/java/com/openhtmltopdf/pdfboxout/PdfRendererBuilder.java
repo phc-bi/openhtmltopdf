@@ -1,323 +1,273 @@
 package com.openhtmltopdf.pdfboxout;
 
-import java.io.File;
+import com.openhtmltopdf.css.constants.IdentValue;
+import com.openhtmltopdf.extend.*;
+import com.openhtmltopdf.extend.impl.FSNoOpCacheStore;
+import com.openhtmltopdf.outputdevice.helper.AddedFont;
+import com.openhtmltopdf.outputdevice.helper.BaseDocument;
+import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder;
+import com.openhtmltopdf.outputdevice.helper.PageDimensions;
+import com.openhtmltopdf.outputdevice.helper.UnicodeImplementation;
+import com.openhtmltopdf.util.LogMessageId;
+import com.openhtmltopdf.util.XRLog;
+
+import org.apache.pdfbox.pdmodel.PDDocument;
+
+import java.io.Closeable;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.util.logging.Level;
 
-import org.w3c.dom.Document;
+public class PdfRendererBuilder extends BaseRendererBuilder<PdfRendererBuilder, PdfRendererBuilderState> {
 
-import com.openhtmltopdf.bidi.BidiReorderer;
-import com.openhtmltopdf.bidi.BidiSplitterFactory;
-import com.openhtmltopdf.extend.FSCache;
-import com.openhtmltopdf.extend.FSTextBreaker;
-import com.openhtmltopdf.extend.FSTextTransformer;
-import com.openhtmltopdf.extend.FSUriResolver;
-import com.openhtmltopdf.extend.HttpStreamFactory;
-import com.openhtmltopdf.extend.SVGDrawer;
-import com.openhtmltopdf.pdfboxout.PdfBoxRenderer.BaseDocument;
-import com.openhtmltopdf.pdfboxout.PdfBoxRenderer.PageDimensions;
-import com.openhtmltopdf.pdfboxout.PdfBoxRenderer.UnicodeImplementation;
+	public PdfRendererBuilder() {
+		super(new PdfRendererBuilderState());
+		
+		for (CacheStore cacheStore : CacheStore.values()) {
+		    // Use the flyweight pattern to initialize all caches with a no-op implementation to
+		    // avoid excessive null handling.
+		    state._caches.put(cacheStore, FSNoOpCacheStore.INSTANCE);
+		}
+	}
 
-public class PdfRendererBuilder
-{
-    public static enum TextDirection { RTL, LTR; }
-    public static enum PageSizeUnits { MM, INCHES };
-    
-    public static final float PAGE_SIZE_LETTER_WIDTH = 8.5f;
-    public static final float PAGE_SIZE_LETTER_HEIGHT = 11.0f;
-    public static final PageSizeUnits PAGE_SIZE_LETTER_UNITS = PageSizeUnits.INCHES;
+	/**
+	 * Run the XHTML/XML to PDF conversion and output to an output stream set by
+	 * toStream.
+	 *
+	 * @throws IOException
+	 */
+	public void run() throws IOException {
+		try (Closeable d = applyDiagnosticConsumer(); PdfBoxRenderer renderer = this.buildPdfRenderer(d)){
+			renderer.layout();
+			renderer.createPDF();
+		}
+	}
 
-    private boolean _textDirection = false;
-    private boolean _testMode = false;
-    private HttpStreamFactory _httpStreamFactory;
-    private BidiSplitterFactory _splitter;
-    private BidiReorderer _reorderer;
-    private String _html;
-    private Document _document;
-    private String _baseUri;
-    private String _uri;
-    private File _file;
-    private OutputStream _os;
-    private FSUriResolver _resolver;
-    private FSCache _cache;
-    private SVGDrawer _svgImpl;
-    private Float _pageWidth;
-    private Float _pageHeight;
-    private boolean _isPageSizeInches;
-    private float _pdfVersion = 1.7f;
-    private String _replacementText;
-    private FSTextBreaker _lineBreaker;
-    private FSTextBreaker _charBreaker;
-    private FSTextTransformer _unicodeToUpperTransformer;
-    private FSTextTransformer _unicodeToLowerTransformer;
-    private FSTextTransformer _unicodeToTitleTransformer;
+	/**
+	 * Build a PdfBoxRenderer for further customization. Remember to call
+	 * {@link PdfBoxRenderer#cleanup()} after use.
+	 *
+	 * @return
+	 */
+	public PdfBoxRenderer buildPdfRenderer() {
+		return buildPdfRenderer(applyDiagnosticConsumer());
+	}
 
-    
-    /**
-     * Run the XHTML/XML to PDF conversion and output to an output stream set by toStream.
-     * @throws Exception
-     */
-    public void run() throws Exception {
-        PdfBoxRenderer renderer = null;
-        try {
-            renderer = this.buildPdfRenderer();
-            renderer.layout();
-            renderer.createPDF();
-        } finally {
-            if (renderer != null)
-                renderer.cleanup();
-        }
-    }
-    
-    /**
-     * Build a PdfBoxRenderer for further customization.
-     * Remember to call {@link PdfBoxRenderer#cleanup()} after use.
-     * @return
-     */
-    public PdfBoxRenderer buildPdfRenderer() {
-        UnicodeImplementation unicode = new UnicodeImplementation(_reorderer, _splitter, _lineBreaker, 
-                _unicodeToLowerTransformer, _unicodeToUpperTransformer, _unicodeToTitleTransformer, _textDirection, _charBreaker);
+	public PdfBoxRenderer buildPdfRenderer(Closeable diagnosticConsumer) {
+		UnicodeImplementation unicode = new UnicodeImplementation(state._reorderer, state._splitter, state._lineBreaker,
+				state._unicodeToLowerTransformer, state._unicodeToUpperTransformer, state._unicodeToTitleTransformer, state._textDirection,
+				state._charBreaker);
 
-        PageDimensions pageSize = new PageDimensions(_pageWidth, _pageHeight, _isPageSizeInches);
-        
-        BaseDocument doc = new BaseDocument(_baseUri, _html, _document, _file, _uri);
-        
-        return new PdfBoxRenderer(doc, unicode, _httpStreamFactory, _os, _resolver, _cache, _svgImpl, pageSize, _pdfVersion, _replacementText, _testMode);
-    }
-    
-    /**
-     * The default text direction of the document. LTR by default.
-     * @param textDirection
-     * @return
-     */
-    public PdfRendererBuilder defaultTextDirection(TextDirection textDirection) {
-        this._textDirection = textDirection == TextDirection.RTL;
-        return this;
-    }
+		PageDimensions pageSize = new PageDimensions(state._pageWidth, state._pageHeight, state._isPageSizeInches);
 
-    /**
-     * Whether to use test mode and output the PDF uncompressed. Turned off by default.
-     * @param mode
-     * @return
-     */
-    public PdfRendererBuilder testMode(boolean mode) {
-        this._testMode = mode;
-        return this;
-    }
-    
-    /**
-     * Provides an HttpStreamFactory implementation if the user desires to use an external
-     * HTTP/HTTPS implementation. Uses URL::openStream by default.
-     * @param factory
-     * @return
-     */
-    public PdfRendererBuilder useHttpStreamImplementation(HttpStreamFactory factory) {
-        this._httpStreamFactory = factory;
-        return this;
-    }
-    
-    /**
-     * Provides a uri resolver to resolve relative uris or private uri schemes.
-     * @param resolver
-     * @return
-     */
-    public PdfRendererBuilder useUriResolver(FSUriResolver resolver) {
-        this._resolver = resolver;
-        return this;
-    }
-    
-    /**
-     * Provides an external cache which can choose to cache items between runs,
-     * such as fonts or logo images.
-     * @param cache
-     * @return
-     */
-    public PdfRendererBuilder useCache(FSCache cache) {
-        this._cache = cache;
-        return this;
-    }
-    
-    /**
-     * Provides a text splitter to split text into directional runs. Does nothing by default.
-     * @param splitter
-     * @return
-     */
-    public PdfRendererBuilder useUnicodeBidiSplitter(BidiSplitterFactory splitter) {
-        this._splitter = splitter;
-        return this;
-    }
-    
-    /**
-     * Provides a reorderer to properly reverse RTL text. No-op by default.
-     * @param reorderer
-     * @return
-     */
-    public PdfRendererBuilder useUnicodeBidiReorderer(BidiReorderer reorderer) {
-        this._reorderer = reorderer;
-        return this;
-    }
-    
-    /**
-     * Provides a string containing XHTML/XML to convert to PDF.
-     * @param html
-     * @param baseUri
-     * @return
-     */
-    public PdfRendererBuilder withHtmlContent(String html, String baseUri) {
-        this._html = html;
-        this._baseUri = baseUri;
-        return this;
-    }
+		BaseDocument doc = new BaseDocument(state._baseUri, state._html, state._document, state._file, state._uri);
 
-    /**
-     * Provides a w3c DOM Document acquired from an external source.
-     * @param doc
-     * @param baseUri
-     * @return
-     */
-    public PdfRendererBuilder withW3cDocument(org.w3c.dom.Document doc, String baseUri) {
-        this._document = doc;
-        this._baseUri = baseUri;
-        return this;
-    }
+		PdfBoxRenderer renderer = new PdfBoxRenderer(doc, unicode, pageSize, state, diagnosticConsumer);
 
-    /**
-     * Provides a URI to convert to PDF. The URI MUST point to a strict XHTML/XML document.
-     * @param uri
-     * @return
-     */
-    public PdfRendererBuilder withUri(String uri) {
-        this._uri = uri;
-        return this;
-    }
-    
-    /**
-     * Provides a file to convert to PDF. The file MUST contain XHTML/XML in UTF-8 encoding.
-     * @param file
-     * @return
-     */
-    public PdfRendererBuilder withFile(File file) {
-        this._file = file;
-        return this;
-    }
+		/*
+		 * Register all Fonts
+		 */
+		PdfBoxFontResolver resolver = renderer.getFontResolver();
+		for (AddedFont font : state._fonts) {
+			IdentValue fontStyle = null;
 
-    /**
-     * An output stream to output the resulting PDF. The caller is required to close the output stream after calling
-     * run.
-     * @param out
-     * @return
-     */
-    public PdfRendererBuilder toStream(OutputStream out) {
-        this._os = out;
-        return this;
-    }
-    
-    /**
-     * Uses the specified SVG drawer implementation.
-     * @param svgImpl
-     * @return
-     */
-    public PdfRendererBuilder useSVGDrawer(SVGDrawer svgImpl) {
-        this._svgImpl = svgImpl;
-        return this;
-    }
+			if (font.style == FontStyle.NORMAL) {
+				fontStyle = IdentValue.NORMAL;
+			} else if (font.style == FontStyle.ITALIC) {
+				fontStyle = IdentValue.ITALIC;
+			} else if (font.style == FontStyle.OBLIQUE) {
+				fontStyle = IdentValue.OBLIQUE;
+			}
 
-    /**
-     * Specifies the default page size to use if none is specified in CSS.
-     * @param pageWidth
-     * @param pageHeight
-     * @param units either mm or inches.
-     * @see {@link #PAGE_SIZE_LETTER_WIDTH}, {@link #PAGE_SIZE_LETTER_HEIGHT} and {@link #PAGE_SIZE_LETTER_UNITS}
-     * @return
-     */
-    public PdfRendererBuilder useDefaultPageSize(float pageWidth, float pageHeight, PageSizeUnits units) {
-        this._pageWidth = pageWidth;
-        this._pageHeight = pageHeight;
-        this._isPageSizeInches = (units == PageSizeUnits.INCHES);
-        return this;
-    }
-    
-    /**
-     * Set the PDF version, typically we use 1.7.
-     * If you set a lower version, it is your responsibility to make sure
-     * no more recent PDF features are used.
-     * @param version
-     * @return
-     */
-    public PdfRendererBuilder usePdfVersion(float version) {
-        this._pdfVersion = version;
-        return this;
-    }
-    
-    /**
-     * The replacement text to use if a character is cannot be renderered by any of the specified fonts.
-     * This is not broken across lines so should be one or zero characters for best results.
-     * Also, make sure it can be rendered by at least one of your specified fonts!
-     * The default is the # character.
-     * @param replacement
-     * @return
-     */
-    public PdfRendererBuilder useReplacementText(String replacement) {
-        this._replacementText = replacement;
-        return this;
-    }
-    
-    /**
-     * Specify the line breaker. By default a Java default BreakIterator line instance is used
-     * with US locale. Additionally, this is wrapped with UrlAwareLineBreakIterator to also
-     * break before the forward slash (/) character so that long URIs can be broken on to multiple lines.
-     * 
-     * You may want to use a BreakIterator with a different locale (wrapped by UrlAwareLineBreakIterator or not)
-     * or a more advanced BreakIterator from icu4j (see the rtl-support module for an example).
-     * @param breaker
-     * @return
-     */
-    public PdfRendererBuilder useUnicodeLineBreaker(FSTextBreaker breaker) {
-        this._lineBreaker = breaker;
-        return this;
-    }
-    
-    /**
-     * Specify the character breaker. By default a break iterator character instance is used with 
-     * US locale. Currently this is used when <code>word-wrap: break-word</code> is in
-     * effect.
-     * @param breaker
-     * @return
-     */
-    public PdfRendererBuilder useUnicodeCharacterBreaker(FSTextBreaker breaker) {
-        this._charBreaker = breaker;
-        return this;
-    }
-    
-    /**
-     * Specify a transformer to use to upper case strings.
-     * By default <code>String::toUpperCase(Locale.US)</code> is used.
-     * @param tr
-     * @return
-     */
-    public PdfRendererBuilder useUnicodeToUpperTransformer(FSTextTransformer tr) {
-        this._unicodeToUpperTransformer = tr;
-        return this;
-    }
+			// use InputStream supplier
+			if (font.supplier != null) {
+				resolver.addFont(font.supplier, font.family, font.weight, fontStyle, font.subset);
+			} 
+			// use PDFont supplier
+			else if (font.pdfontSupplier != null) {
+				resolver.addFont((PDFontSupplier) font.pdfontSupplier, font.family, font.weight, fontStyle, font.subset);
+			} 
+			// load via font File
+			else {
+				try {
+					resolver.addFont(font.fontFile, font.family, font.weight, fontStyle, font.subset);
+				} catch (Exception e) {
+					XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.INIT_FONT_COULD_NOT_BE_LOADED, font.fontFile.getPath(), e);
+				}
+			}
+		}
 
-    /**
-     * Specify a transformer to use to lower case strings.
-     * By default <code>String::toLowerCase(Locale.US)</code> is used.
-     * @param tr
-     * @return
-     */
-    public PdfRendererBuilder useUnicodeToLowerTransformer(FSTextTransformer tr) {
-        this._unicodeToLowerTransformer = tr;
-        return this;
-    }
+		return renderer;
+	}
 
-    /**
-     * Specify a transformer to title case strings.
-     * By default a best effort implementation (non locale aware) is used.
-     * @param tr
-     * @return
-     */
-    public PdfRendererBuilder useUnicodeToTitleTransformer(FSTextTransformer tr) {
-        this._unicodeToTitleTransformer = tr;
-        return this;
-    }
+	/**
+	 * An output stream to output the resulting PDF. The caller is required to close
+	 * the output stream after calling run.
+	 *
+	 * @param out
+	 * @return
+	 */
+	public PdfRendererBuilder toStream(OutputStream out) {
+		state._os = out;
+		return this;
+	}
+
+	/**
+	 * Set the PDF version, typically we use 1.7. If you set a lower version, it is
+	 * your responsibility to make sure no more recent PDF features are used.
+	 *
+	 * @param version
+	 * @return
+	 */
+	public PdfRendererBuilder usePdfVersion(float version) {
+		state._pdfVersion = version;
+		return this;
+	}
+
+	/**
+	 * Set the PDF/A conformance, typically we use PDF/A-1
+	 * 
+	 * Note: PDF/A documents require fonts to be embedded. So if this is not set to NONE,
+	 * the built-in fonts will not be available and currently any text without a
+	 * specified and embedded font will cause the renderer to crash with an exception.
+	 *
+	 * @param pdfAConformance
+	 * @return
+	 */
+	public PdfRendererBuilder usePdfAConformance(PdfAConformance pdfAConformance) {
+		this.state._pdfAConformance = pdfAConformance;
+		return this;
+	}
+	
+	/**
+	 * Whether to conform to PDF/UA or Accessible PDF. False by default.
+	 * @param pdfUaAccessibility
+	 * @return this for method chaining
+	 */
+	public PdfRendererBuilder usePdfUaAccessbility(boolean pdfUaAccessibility) {
+	    this.state._pdfUaConform = pdfUaAccessibility;
+	    return this;
+	}
+
+	/**
+	 * Sets the color profile, needed for PDF/A conformance.
+	 *
+	 * You can use the sRGB.icc from https://svn.apache.org/viewvc/pdfbox/trunk/examples/src/main/resources/org/apache/pdfbox/resources/pdfa/
+	 *
+	 * @param colorProfile
+	 * @return
+	 */
+	public PdfRendererBuilder useColorProfile(byte[] colorProfile) {
+		this.state._colorProfile = colorProfile;
+		return this;
+	}
+	
+	/**
+	 * By default, this project creates an entirely in-memory <code>PDDocument</code>.
+	 * The user can use this method to create a document either entirely on-disk
+	 * or a mix of in-memory and on-disk using the <code>PDDocument</code> constructor
+	 * that takes a <code>MemoryUsageSetting</code>.
+	 * @param doc a (usually empty) PDDocument
+	 * @return this for method chaining
+	 */
+	public PdfRendererBuilder usePDDocument(PDDocument doc) {
+	    state.pddocument = doc;
+	    return this;
+	}
+
+	/**
+	 * Like {@link #useFont(FSSupplier, String, Integer, FontStyle, boolean)} but
+	 * allows to supply a PDFont directly. Subclass {@link PDFontSupplier} if you need
+	 * special font-loading rules (like using a font-cache).
+	 */
+	public PdfRendererBuilder useFont(PDFontSupplier supplier, String fontFamily, Integer fontWeight,
+			FontStyle fontStyle, boolean subset) {
+		state._fonts.add(new AddedFont(supplier, fontWeight, fontFamily, subset, fontStyle));
+		return this;
+	}
+	
+	/**
+	 * Simpler overload for 
+	 * {@link #useFont(PDFontSupplier, String, Integer, FontStyle, boolean)}
+	 */
+	public PdfRendererBuilder useFont(PDFontSupplier supplier, String fontFamily) {
+		return this.useFont(supplier, fontFamily, 400, FontStyle.NORMAL, true);
+	}
+
+	/**
+	 * Set a producer on the output document
+	 *
+	 * @param producer
+	 *            the name of the producer to set defaults to openhtmltopdf.com
+	 * @return this for method chaining
+	 */
+	public PdfRendererBuilder withProducer(String producer) {
+		state._producer = producer;
+		return this;
+	}
+
+	/**
+	 * List of caches available.
+	 */
+	public enum CacheStore {
+	    
+	    /**
+	     * Caches font metrics, based on a combined key of family name, weight and style.
+	     * Using this cache avoids loading fallback fonts if the metrics are already in the cache
+	     * and the previous fonts contain the needed characters.
+	     */
+	    PDF_FONT_METRICS;
+	}
+	
+	/**
+	 * Use a specific cache. Cache values should be thread safe, so provided your cache store itself
+	 * is thread safe can be used accross threads.
+	 * @return this for method chaining.
+	 * @see CacheStore
+	 */
+	public PdfRendererBuilder useCacheStore(CacheStore which, FSCacheEx<String, FSCacheValue> cache) {
+	    state._caches.put(which, cache);
+	    return this;
+	}
+
+	/**
+	 * Set a PageSupplier that is called whenever a new page is needed.
+	 * 
+	 * @param pageSupplier 
+	 *            {@link PageSupplier} to use
+	 * @return this for method chaining.
+	 */
+	public PdfRendererBuilder usePageSupplier(PageSupplier pageSupplier) {
+		state._pageSupplier = pageSupplier;
+		return this;
+	}
+
+	/**
+	 * Various level of PDF/A conformance:
+	 *
+	 * PDF/A-1, PDF/A-2 and PDF/A-3
+	 */
+	public enum PdfAConformance {
+		NONE(-1, ""),
+		PDFA_1_A(1, "A"), PDFA_1_B(1, "B"),
+		PDFA_2_A(2, "A"), PDFA_2_B(2, "B"), PDFA_2_U(2, "U"),
+		PDFA_3_A(3, "A"), PDFA_3_B(3, "B"), PDFA_3_U(3, "U");
+
+		PdfAConformance(int part, String value) {
+			this.part = part;
+			this.value = value;
+		}
+
+		private final int part;
+		private final String value;
+		
+		public String getConformanceValue() {
+		    return this.value;
+		}
+
+		public int getPart() {
+			return this.part;
+		}
+	}
 }
+

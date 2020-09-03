@@ -20,8 +20,6 @@
  */
 package com.openhtmltopdf.util;
 
-import com.openhtmltopdf.DefaultCSSMarker;
-
 import java.io.*;
 import java.util.*;
 import java.util.logging.Level;
@@ -30,7 +28,6 @@ import java.util.logging.Logger;
 import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.MalformedURLException;
-
 
 /**
  * <p>Stores runtime configuration information for application parameters that may
@@ -91,7 +88,7 @@ public class Configuration {
      * List of LogRecords for messages from Configuration startup; used to hold these
      * temporarily as we can't use XRLog while starting up, as it depends on Configuration.
      */
-    private List startupLogRecords;
+    private List<LogRecord> startupLogRecords;
 
     /**
      * Logger we use internally related to configuration.
@@ -101,7 +98,7 @@ public class Configuration {
     /**
      * The location of our default properties file; must be on the CLASSPATH.
      */
-    private final static String SF_FILE_NAME = "resources/conf/xhtmlrenderer.conf";
+    private final static String SF_FILE_NAME = "/resources/conf/xhtmlrenderer.conf";
 
     /**
      * Default constructor. Will parse default configuration file, system properties, override properties, etc. and
@@ -111,7 +108,7 @@ public class Configuration {
      * for example, if the default configuration file was not readable.
      */
     private Configuration() {
-        startupLogRecords = new ArrayList();
+        startupLogRecords = new ArrayList<>();
 
         try {
             try {
@@ -173,9 +170,9 @@ public class Configuration {
         Configuration config = instance();
         config.configLogger = logger;
         if (config.startupLogRecords != null) {
-            Iterator iter = config.startupLogRecords.iterator();
+            Iterator<LogRecord> iter = config.startupLogRecords.iterator();
             while (iter.hasNext()) {
-                LogRecord lr = (LogRecord) iter.next();
+                LogRecord lr = iter.next();
                 logger.log(lr.getLevel(), lr.getMessage());
             }
             config.startupLogRecords = null;
@@ -255,30 +252,21 @@ public class Configuration {
 
 
     /**
-     * Loads the default set of properties, which may be overridden.
+     * Loads the default set of properties.
      */
     private void loadDefaultProperties() {
-        try {
-            InputStream readStream = GeneralUtil.openStreamFromClasspath(new DefaultCSSMarker(), SF_FILE_NAME);
-
+        try (InputStream readStream = Configuration.class.getResourceAsStream(SF_FILE_NAME)){
             if (readStream == null) {
                 System.err.println("WARNING: Flying Saucer: No configuration files found in classpath using URL: " + SF_FILE_NAME + ", resorting to hard-coded fallback properties.");
                 this.properties = newFallbackProperties();
             } else {
-                try {
-                    this.properties = new Properties();
-                    this.properties.load(readStream);
-                } finally {
-                    readStream.close();
-                }
+                this.properties = new Properties();
+                this.properties.load(readStream);
+                info("Configuration loaded from " + SF_FILE_NAME);
             }
-        } catch (RuntimeException rex) {
-            throw rex;
         } catch (Exception ex) {
-            throw new RuntimeException("Could not load properties file for configuration.",
-                    ex);
+            throw new RuntimeException("Could not load properties file for configuration.", ex);
         }
-        info("Configuration loaded from " + SF_FILE_NAME);
     }
 
     /**
@@ -293,13 +281,8 @@ public class Configuration {
             Properties temp = new Properties();
             if (f.exists()) {
                 info("Found config override file " + f.getAbsolutePath());
-                try {
-                    InputStream readStream = new BufferedInputStream(new FileInputStream(f));
-                    try {
-                        temp.load(readStream);
-                    } finally {
-                        readStream.close();
-                    }
+                try (InputStream readStream = new BufferedInputStream(new FileInputStream(f))) {
+                    temp.load(readStream);
                 } catch (IOException iex) {
                     warning("Error while loading override properties file; skipping.", iex);
                     return;
@@ -326,15 +309,15 @@ public class Configuration {
                 }
             }
 
-            Enumeration elem = this.properties.keys();
-            List lp = Collections.list(elem);
+            Enumeration<?> elem = this.properties.keys();
+            List<String> lp = (List<String>) Collections.list(elem);
             Collections.sort(lp);
-            Iterator iter = lp.iterator();
+            Iterator<String> iter = lp.iterator();
 
             // override existing properties
             int cnt = 0;
             while (iter.hasNext()) {
-                String key = (String) iter.next();
+                String key = iter.next();
                 String val = temp.getProperty(key);
                 if (val != null) {
                     this.properties.setProperty(key, val);
@@ -345,13 +328,13 @@ public class Configuration {
             finer("Configuration: " + cnt + " properties overridden from secondary properties file.");
             // and add any new properties we don't already know about (needed for custom logging
             // configuration)
-            Enumeration allRead = temp.keys();
-            List ap = Collections.list(allRead);
+            Enumeration<?> allRead = temp.keys();
+            List<String> ap = (List<String>) Collections.list(allRead);
             Collections.sort(ap);
             iter = ap.iterator();
             cnt = 0;
             while (iter.hasNext()) {
-                String key = (String) iter.next();
+                String key = iter.next();
                 String val = temp.getProperty(key);
                 if (val != null) {
                     this.properties.setProperty(key, val);
@@ -389,14 +372,14 @@ public class Configuration {
      * optional. See class documentation.
      */
     private void loadSystemProperties() {
-        Enumeration elem = properties.keys();
-        List lp = Collections.list(elem);
+        Enumeration<?> elem = properties.keys();
+        List<String> lp = (List<String>) Collections.list(elem);
         Collections.sort(lp);
-        Iterator iter = lp.iterator();
+        Iterator<String> iter = lp.iterator();
         fine("Overriding loaded configuration from System properties.");
         int cnt = 0;
         while (iter.hasNext()) {
-            String key = (String) iter.next();
+            String key = iter.next();
             if (!key.startsWith("xr.")) {
                 continue;
             }
@@ -417,7 +400,7 @@ public class Configuration {
         // add any additional properties we don't already know about (e.g. used for extended logging properties)
         try {
             final Properties sysProps = System.getProperties();
-            final Enumeration keys = sysProps.keys();
+            final Enumeration<?> keys = sysProps.keys();
             cnt = 0;
             while (keys.hasMoreElements()) {
                 String key = (String) keys.nextElement();
@@ -438,14 +421,14 @@ public class Configuration {
      * Writes a log of loaded properties to the plumbing.init Logger.
      */
     private void logAfterLoad() {
-        Enumeration elem = properties.keys();
-        List lp = Collections.list(elem);
+        Enumeration<?> elem = properties.keys();
+        List<String> lp = (List<String>) Collections.list(elem);
         Collections.sort(lp);
-        Iterator iter = lp.iterator();
+        Iterator<String> iter = lp.iterator();
         finer("Configuration contains " + properties.size() + " keys.");
         finer("List of configuration properties, after override:");
         while (iter.hasNext()) {
-            String key = (String) iter.next();
+            String key = iter.next();
             String val = properties.getProperty(key);
             finer("  " + key + " = " + val);
         }
@@ -494,8 +477,7 @@ public class Configuration {
         try {
             bval = Byte.valueOf(val).byteValue();
         } catch (NumberFormatException nex) {
-            XRLog.exception("Property '" + key + "' was requested as a byte, but " +
-                    "value of '" + val + "' is not a byte. Check configuration.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.EXCEPTION_CONFIGURATION_WRONG_TYPE, key, "byte", val, "byte");
             bval = defaultVal;
         }
         return bval;
@@ -521,8 +503,7 @@ public class Configuration {
         try {
             sval = Short.valueOf(val).shortValue();
         } catch (NumberFormatException nex) {
-            XRLog.exception("Property '" + key + "' was requested as a short, but " +
-                    "value of '" + val + "' is not a short. Check configuration.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.EXCEPTION_CONFIGURATION_WRONG_TYPE, key, "short", val, "short");
             sval = defaultVal;
         }
         return sval;
@@ -548,36 +529,10 @@ public class Configuration {
         try {
             ival = Integer.valueOf(val).intValue();
         } catch (NumberFormatException nex) {
-            XRLog.exception("Property '" + key + "' was requested as an integer, but " +
-                    "value of '" + val + "' is not an integer. Check configuration.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.EXCEPTION_CONFIGURATION_WRONG_TYPE, key, "integer", val, "integer");
             ival = defaultVal;
         }
         return ival;
-    }
-
-    /**
-     * Returns the value for key in the Configuration as a character, or a
-     * default value if not found. A warning is issued to the log if the
-     * property is not defined, or if the configuration value is too long
-     * to be a char. If the configuration value is longer than a single
-     * character, only the first character is returned.
-     *
-     * @param key Name of the property
-     * @param defaultVal PARAM
-     * @returnValue assigned to the key, as a character
-     */
-    public static char valueAsChar(String key, char defaultVal) {
-        String val = valueFor(key);
-        if (val == null) {
-            return defaultVal;
-        }
-
-        if(val.length() > 1) {
-            XRLog.exception("Property '" + key + "' was requested as a character. The value of '" +
-                    val + "' is too long to be a char. Returning only the first character.");
-        }
-
-        return val.charAt(0);
     }
 
     /**
@@ -600,8 +555,7 @@ public class Configuration {
         try {
             lval = Long.valueOf(val).longValue();
         } catch (NumberFormatException nex) {
-            XRLog.exception("Property '" + key + "' was requested as a long, but " +
-                    "value of '" + val + "' is not a long. Check configuration.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.EXCEPTION_CONFIGURATION_WRONG_TYPE, key, "long", val, "long");
             lval = defaultVal;
         }
         return lval;
@@ -627,8 +581,7 @@ public class Configuration {
         try {
             fval = Float.valueOf(val).floatValue();
         } catch (NumberFormatException nex) {
-            XRLog.exception("Property '" + key + "' was requested as a float, but " +
-                    "value of '" + val + "' is not a float. Check configuration.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.EXCEPTION_CONFIGURATION_WRONG_TYPE, key, "float", val, "float");
             fval = defaultVal;
         }
         return fval;
@@ -654,8 +607,7 @@ public class Configuration {
         try {
             dval = Double.valueOf(val).doubleValue();
         } catch (NumberFormatException nex) {
-            XRLog.exception("Property '" + key + "' was requested as a double, but " +
-                    "value of '" + val + "' is not a double. Check configuration.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.EXCEPTION_CONFIGURATION_WRONG_TYPE, key, "double", val, "double");
             dval = defaultVal;
         }
         return dval;
@@ -687,10 +639,10 @@ public class Configuration {
      * @param prefix Prefix to filter on. No regex.
      * @return Returns Iterator, see description.
      */
-    public static Iterator keysByPrefix(String prefix) {
+    public static Iterator<String> keysByPrefix(String prefix) {
         Configuration conf = instance();
-        Iterator iter = conf.properties.keySet().iterator();
-        List l = new ArrayList();
+        Iterator<?> iter = conf.properties.keySet().iterator();
+        List<String> l = new ArrayList<>();
         while (iter.hasNext()) {
             String key = (String) iter.next();
             if (key.startsWith(prefix)) {
@@ -698,26 +650,6 @@ public class Configuration {
             }
         }
         return l.iterator();
-    }
-
-
-    /**
-     * Command-line execution for testing. No arguments.
-     *
-     * @param args Ignored
-     */
-    public static void main(String args[]) {
-        try {
-            System.out.println("byte: " + String.valueOf(Configuration.valueAsByte("xr.test-config-byte", (byte) 15)));
-            System.out.println("short: " + String.valueOf(Configuration.valueAsShort("xr.test-config-short", (short) 20)));
-            System.out.println("int: " + String.valueOf(Configuration.valueAsInt("xr.test-config-int", 25)));
-            System.out.println("long: " + String.valueOf(Configuration.valueAsLong("xr.test-config-long", 30L)));
-            System.out.println("float: " + String.valueOf(Configuration.valueAsFloat("xr.test-config-float", 45.5F)));
-            System.out.println("double: " + String.valueOf(Configuration.valueAsDouble("xr.test-config-double", 50.75D)));
-            System.out.println("boolean: " + String.valueOf(Configuration.isTrue("xr.test-config-boolean", false)));
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
     }
 
     /**
@@ -737,8 +669,7 @@ public class Configuration {
         }
 
         if ("true|false".indexOf(val) == -1) {
-            XRLog.exception("Property '" + key + "' was requested as a boolean, but " +
-                    "value of '" + val + "' is not a boolean. Check configuration.");
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId4Param.EXCEPTION_CONFIGURATION_WRONG_TYPE, key, "boolean", val, "boolean");
             return defaultVal;
         } else {
             return Boolean.valueOf(val).booleanValue();
@@ -796,7 +727,7 @@ public class Configuration {
                     "should be FQN<dot>constant, is " + val);
             return defaultValue;
         }
-        Class klass;
+        Class<?> klass;
         try {
             klass = Class.forName(klassname);
         } catch (ClassNotFoundException e) {

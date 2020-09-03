@@ -22,7 +22,6 @@ package com.openhtmltopdf.layout;
 import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -68,17 +67,17 @@ public class LayoutContext implements CssContext {
     private StyleTracker _firstLetters;
     private MarkerData _currentMarkerData;
 
-    private LinkedList _bfcs;
-    private LinkedList _layers;
+    private LinkedList<BlockFormattingContext> _bfcs;
+    private LinkedList<Layer> _layers;
 
     private FontContext _fontContext;
 
-    private ContentFunctionFactory _contentFunctionFactory = new ContentFunctionFactory();
+    private final ContentFunctionFactory _contentFunctionFactory = new ContentFunctionFactory();
 
     private int _extraSpaceTop;
     private int _extraSpaceBottom;
 
-    private Map _counterContextMap = new HashMap();
+    private final Map<CalculatedStyle, CounterContext> _counterContextMap = new HashMap<>();
 
     private String _pendingPageName;
     private String _pageName;
@@ -91,7 +90,10 @@ public class LayoutContext implements CssContext {
     private boolean _mayCheckKeepTogether = true;
 
     private BreakAtLineContext _breakAtLineContext;
+    
+    private Boolean isPrintOverride = null; // True, false, or null for no override.
 
+    @Override
     public TextRenderer getTextRenderer() {
         return _sharedContext.getTextRenderer();
     }
@@ -165,8 +167,9 @@ public class LayoutContext implements CssContext {
     //the stuff that needs to have a separate instance for each run.
     LayoutContext(SharedContext sharedContext) {
         _sharedContext = sharedContext;
-        _bfcs = new LinkedList();
-        _layers = new LinkedList();
+        
+        _bfcs = new LinkedList<>();
+        _layers = new LinkedList<>();
 
         _firstLines = new StyleTracker();
         _firstLetters = new StyleTracker();
@@ -177,11 +180,11 @@ public class LayoutContext implements CssContext {
         _firstLetters = new StyleTracker();
         _currentMarkerData = null;
 
-        _bfcs = new LinkedList();
+        _bfcs = new LinkedList<>();
 
         if (! keepLayers) {
             _rootLayer = null;
-            _layers = new LinkedList();
+            _layers = new LinkedList<>();
         }
 
         _extraSpaceTop = 0;
@@ -249,7 +252,7 @@ public class LayoutContext implements CssContext {
     }
 
     public BlockFormattingContext getBlockFormattingContext() {
-        return (BlockFormattingContext) _bfcs.getLast();
+        return _bfcs.getLast();
     }
 
     public void pushBFC(BlockFormattingContext bfc) {
@@ -264,12 +267,12 @@ public class LayoutContext implements CssContext {
         Layer layer = null;
 
         if (_rootLayer == null) {
-            layer = new Layer(master);
+            layer = new Layer(master, this);
             _rootLayer = layer;
         } else {
             Layer parent = getLayer();
 
-            layer = new Layer(parent, master);
+            layer = new Layer(parent, master, this);
 
             parent.addChild(layer);
         }
@@ -290,7 +293,7 @@ public class LayoutContext implements CssContext {
     }
 
     public Layer getLayer() {
-        return (Layer) _layers.getLast();
+        return _layers.getLast();
     }
 
     public Layer getRootLayer() {
@@ -335,11 +338,22 @@ public class LayoutContext implements CssContext {
     }
 
     public UserAgentCallback getUac() {
-        return _sharedContext.getUac();
+        return _sharedContext.getUserAgentCallback();
     }
 
     public boolean isPrint() {
+    	if (this.isPrintOverride != null) {
+    		return this.isPrintOverride;
+    	}
+    	
         return _sharedContext.isPrint();
+    }
+    
+    /**
+     * @param isPrint true, false or null for no override.
+     */
+    public void setIsPrintOverride(Boolean isPrint) {
+    	this.isPrintOverride = isPrint;
     }
 
     public StyleTracker getFirstLinesTracker() {
@@ -362,6 +376,7 @@ public class LayoutContext implements CssContext {
         return _sharedContext.getReplacedElementFactory();
     }
 
+    @Override
     public FontContext getFontContext() {
         return _fontContext;
     }
@@ -405,7 +420,7 @@ public class LayoutContext implements CssContext {
     }
 
     public CounterContext getCounterContext(CalculatedStyle style) {
-        return (CounterContext) _counterContextMap.get(style);
+        return _counterContextMap.get(style);
     }
 
     public FSFontMetrics getFSFontMetrics(FSFont font) {
@@ -413,7 +428,7 @@ public class LayoutContext implements CssContext {
     }
 
     public class CounterContext {
-        private Map _counters = new HashMap();
+        private Map<String, Integer> _counters = new HashMap<>();
         /**
          * This is different because it needs to work even when the counter- properties cascade
          * and it should also logically be redefined on each level (think list-items within list-items)
@@ -431,21 +446,21 @@ public class LayoutContext implements CssContext {
 			if (startIndex != null) {
 				_counters.put("list-item", startIndex);
 			}
-            _parent = (LayoutContext.CounterContext) _counterContextMap.get(style.getParent());
+            _parent = _counterContextMap.get(style.getParent());
             if (_parent == null) _parent = new CounterContext();//top-level context, above root element
             //first the explicitly named counters
-            List resets = style.getCounterReset();
-            if (resets != null) for (Iterator i = resets.iterator(); i.hasNext();) {
-                CounterData cd = (CounterData) i.next();
-                _parent.resetCounter(cd);
+            List<CounterData> resets = style.getCounterReset();
+            if (resets != null) {
+                resets.forEach(_parent::resetCounter);
             }
 
-            List increments = style.getCounterIncrement();
-            if (increments != null) for (Iterator i = increments.iterator(); i.hasNext();) {
-                CounterData cd = (CounterData) i.next();
-                if (!_parent.incrementCounter(cd)) {
-                    _parent.resetCounter(new CounterData(cd.getName(), 0));
-                    _parent.incrementCounter(cd);
+            List<CounterData> increments = style.getCounterIncrement();
+            if (increments != null) {
+                for (CounterData cd : increments) {
+                    if (!_parent.incrementCounter(cd)) {
+                        _parent.resetCounter(new CounterData(cd.getName(), 0));
+                        _parent.incrementCounter(cd);
+                    }
                 }
             }
 
@@ -508,27 +523,27 @@ public class LayoutContext implements CssContext {
         }
 
         private Integer getCounter(String name) {
-            Integer value = (Integer) _counters.get(name);
+            Integer value = _counters.get(name);
             if (value != null) return value;
             if (_parent == null) return null;
             return _parent.getCounter(name);
         }
 
-        public List getCurrentCounterValues(String name) {
+        public List<Integer> getCurrentCounterValues(String name) {
             //only the counters of the parent are in scope
             //_parent is never null for a publicly accessible CounterContext
-            List values = new ArrayList();
+            List<Integer> values = new ArrayList<>();
             _parent.getCounterValues(name, values);
             if (values.size() == 0) {
                 _parent.resetCounter(new CounterData(name, 0));
-                values.add(new Integer(0));
+                values.add(Integer.valueOf(0));
             }
             return values;
         }
 
-        private void getCounterValues(String name, List values) {
+        private void getCounterValues(String name, List<Integer> values) {
             if (_parent != null) _parent.getCounterValues(name, values);
-            Integer value = (Integer) _counters.get(name);
+            Integer value = _counters.get(name);
             if (value != null) values.add(value);
         }
     }

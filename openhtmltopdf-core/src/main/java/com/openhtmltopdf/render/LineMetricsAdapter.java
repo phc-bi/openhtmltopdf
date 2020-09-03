@@ -38,14 +38,14 @@ public class LineMetricsAdapter implements FSFontMetrics {
     private final List<LineMetrics> _lineMetrics;
     
     public LineMetricsAdapter(List<Font> fonts, String str, FontRenderContext ctx) {
-        _lineMetrics = new ArrayList<LineMetrics>(fonts.size());
+        _lineMetrics = new ArrayList<>(fonts.size());
     	for (Font fnt : fonts) {
         	_lineMetrics.add(fnt.getLineMetrics(str, ctx));
         }
     }
 
     public float getAscent() {
-    	float maxAscent = Float.MIN_VALUE;
+    	float maxAscent = -Float.MAX_VALUE;
     	
     	for (LineMetrics met : _lineMetrics) {
     		maxAscent = Math.max(maxAscent, met.getAscent());
@@ -55,7 +55,7 @@ public class LineMetricsAdapter implements FSFontMetrics {
     }
 
     public float getDescent() {
-    	float maxDescent = Float.MIN_VALUE;
+    	float maxDescent = -Float.MAX_VALUE;
     	
     	for (LineMetrics met : _lineMetrics) {
     		maxDescent = Math.max(maxDescent, met.getDescent());
@@ -65,7 +65,7 @@ public class LineMetricsAdapter implements FSFontMetrics {
     }
 
     public float getStrikethroughOffset() {
-    	float max = Float.MIN_VALUE;
+    	float max = -Float.MAX_VALUE;
     	
     	for (LineMetrics met : _lineMetrics) {
     		max = Math.max(max, met.getStrikethroughOffset());
@@ -75,7 +75,7 @@ public class LineMetricsAdapter implements FSFontMetrics {
     }
 
     public float getStrikethroughThickness() {
-    	float max = Float.MIN_VALUE;
+    	float max = -Float.MAX_VALUE;
     	
     	for (LineMetrics met : _lineMetrics) {
     		max = Math.max(max, met.getStrikethroughThickness());
@@ -85,7 +85,7 @@ public class LineMetricsAdapter implements FSFontMetrics {
     }
 
     public float getUnderlineOffset() {
-    	float max = Float.MIN_VALUE;
+    	float max = -Float.MAX_VALUE;
     	
     	for (LineMetrics met : _lineMetrics) {
     		max = Math.max(max, met.getUnderlineOffset());
@@ -95,7 +95,7 @@ public class LineMetricsAdapter implements FSFontMetrics {
     }
 
     public float getUnderlineThickness() {
-    	float max = Float.MIN_VALUE;
+    	float max = -Float.MAX_VALUE;
     	
     	for (LineMetrics met : _lineMetrics) {
     		max = Math.max(max, met.getUnderlineThickness());

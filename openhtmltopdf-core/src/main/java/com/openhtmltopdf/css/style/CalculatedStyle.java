@@ -21,14 +21,16 @@
 package com.openhtmltopdf.css.style;
 
 import java.awt.Cursor;
-import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.IdentValue;
 import com.openhtmltopdf.css.newmatch.CascadedStyle;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
+import com.openhtmltopdf.css.parser.CounterData;
 import com.openhtmltopdf.css.parser.FSColor;
 import com.openhtmltopdf.css.parser.FSFunction;
 import com.openhtmltopdf.css.parser.FSRGBColor;
@@ -36,7 +38,9 @@ import com.openhtmltopdf.css.parser.PropertyValue;
 import com.openhtmltopdf.css.parser.property.PrimitivePropertyBuilders;
 import com.openhtmltopdf.css.sheet.PropertyDeclaration;
 import com.openhtmltopdf.css.style.derived.BorderPropertySet;
+import com.openhtmltopdf.css.style.derived.CountersValue;
 import com.openhtmltopdf.css.style.derived.DerivedValueFactory;
+import com.openhtmltopdf.css.style.derived.FSLinearGradient;
 import com.openhtmltopdf.css.style.derived.FunctionValue;
 import com.openhtmltopdf.css.style.derived.LengthValue;
 import com.openhtmltopdf.css.style.derived.ListValue;
@@ -48,6 +52,7 @@ import com.openhtmltopdf.render.Box;
 import com.openhtmltopdf.render.FSFont;
 import com.openhtmltopdf.render.FSFontMetrics;
 import com.openhtmltopdf.render.RenderingContext;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
 import com.openhtmltopdf.util.XRRuntimeException;
 
@@ -61,7 +66,7 @@ import com.openhtmltopdf.util.XRRuntimeException;
  * when this style is created. A property retrieved by name should always have
  * only one value in this class (e.g. one-one map). Any methods to retrieve
  * property values from an instance of this class require a valid {@link
- * org.xhtmlrenderer.layout.Context} be given to it, for some cases of property
+ * com.openhtmltopdf.layout.LayoutContext} be given to it, for some cases of property
  * resolution. Generally, a programmer will not use this class directly, but
  * will retrieve properties using a {@link com.openhtmltopdf.context.StyleReference}
  * implementation.
@@ -94,7 +99,7 @@ public class CalculatedStyle {
     /**
      * Cache child styles of this style that have the same cascaded properties
      */
-    private final java.util.HashMap _childCache = new java.util.HashMap();
+    private final java.util.Map<String, CalculatedStyle> _childCache = new java.util.HashMap<>();
     /*private java.util.HashMap _childCache = new java.util.LinkedHashMap(5, 0.75f, true) {
         private static final int MAX_ENTRIES = 10;
 
@@ -171,7 +176,7 @@ public class CalculatedStyle {
 
     /**
      * derives a child style from this style.
-     * <p/>
+     * <br>
      * depends on the ability to return the identical CascadedStyle each time a child style is needed
      *
      * @param matched the CascadedStyle to apply
@@ -179,7 +184,7 @@ public class CalculatedStyle {
      */
     public synchronized CalculatedStyle deriveStyle(CascadedStyle matched) {
         String fingerprint = matched.getFingerprint();
-        CalculatedStyle cs = (CalculatedStyle) _childCache.get(fingerprint);
+        CalculatedStyle cs = _childCache.get(fingerprint);
 
         if (cs == null) {
             cs = new CalculatedStyle(this, matched);
@@ -210,6 +215,7 @@ public class CalculatedStyle {
      *
      * @return The borderWidth value
      */
+    @Override
     public String toString() {
         return genStyleKey();
     }
@@ -247,9 +253,7 @@ public class CalculatedStyle {
         try {
             isAbs = valueByName(cssName).hasAbsoluteUnit();
         } catch (Exception e) {
-            XRLog.layout(Level.WARNING, "Property " + cssName + " has an assignment we don't understand, " +
-                    "and can't tell if it's an absolute unit or not. Assuming it is not. Exception was: " +
-                    e.getMessage());
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId2Param.LAYOUT_CSS_PROPERTY_HAS_UNPROCESSABLE_ASSIGNMENT, cssName, e.getMessage());
             isAbs = false;
         }
         return isAbs;
@@ -322,14 +326,14 @@ public class CalculatedStyle {
             }
         } else {
             ListValue valueList = (ListValue)value;
-            List values = valueList.getValues();
-            boolean firstAuto = ((PropertyValue)values.get(0)).getIdentValue() == IdentValue.AUTO;
-            boolean secondAuto = ((PropertyValue)values.get(1)).getIdentValue() == IdentValue.AUTO;
+            List<PropertyValue> values = valueList.getValues();
+            boolean firstAuto = values.get(0).getIdentValue() == IdentValue.AUTO;
+            boolean secondAuto = values.get(1).getIdentValue() == IdentValue.AUTO;
 
             if (firstAuto && secondAuto) {
                 return new BackgroundSize(false, false, true);
             } else {
-                return new BackgroundSize((PropertyValue)values.get(0), (PropertyValue)values.get(1));
+                return new BackgroundSize(values.get(0), values.get(1));
             }
         }
 
@@ -338,29 +342,29 @@ public class CalculatedStyle {
 
     public BackgroundPosition getBackgroundPosition() {
         ListValue result = (ListValue) valueByName(CSSName.BACKGROUND_POSITION);
-        List values = result.getValues();
+        List<PropertyValue> values = result.getValues();
 
         return new BackgroundPosition(
-                (PropertyValue) values.get(0), (PropertyValue) values.get(1));
+                values.get(0), values.get(1));
     }
 
-    public List getCounterReset() {
+    public List<CounterData> getCounterReset() {
         FSDerivedValue value = valueByName(CSSName.COUNTER_RESET);
 
         if (value == IdentValue.NONE) {
             return null;
         } else {
-            return ((ListValue) value).getValues();
+            return ((CountersValue) value).getValues();
         }
     }
 
-    public List getCounterIncrement() {
+    public List<CounterData> getCounterIncrement() {
         FSDerivedValue value = valueByName(CSSName.COUNTER_INCREMENT);
 
         if (value == IdentValue.NONE) {
             return null;
         } else {
-            return ((ListValue) value).getValues();
+            return  ((CountersValue) value).getValues();
         }
     }
 
@@ -603,20 +607,18 @@ public class CalculatedStyle {
             return;
         }//nothing to derive
 
-        Iterator mProps = matched.getCascadedPropertyDeclarations();
-        while (mProps.hasNext()) {
-            PropertyDeclaration pd = (PropertyDeclaration) mProps.next();
+		for (PropertyDeclaration pd : matched.getCascadedPropertyDeclarations()) {
             FSDerivedValue val = deriveValue(pd.getCSSName(), pd.getValue());
             _derivedValuesById[pd.getCSSName().FS_ID] = val;
         }
     }
 
-    private FSDerivedValue deriveValue(CSSName cssName, org.w3c.dom.css.CSSPrimitiveValue value) {
+    private FSDerivedValue deriveValue(CSSName cssName, CSSPrimitiveValue value) {
         return DerivedValueFactory.newDerivedValue(this, cssName, (PropertyValue) value);
     }
 
     private String genStyleKey() {
-        StringBuffer sb = new StringBuffer();
+        StringBuilder  sb = new StringBuilder();
         for (int i = 0; i < _derivedValuesById.length; i++) {
             CSSName name = CSSName.getByID(i);
             FSDerivedValue val = _derivedValuesById[i];
@@ -943,6 +945,10 @@ public class CalculatedStyle {
     }
 
     public boolean establishesBFC() {
+        if (hasColumns()) {
+            return true;
+        }
+        
         FSDerivedValue value = valueByName(CSSName.POSITION);
 
         if (value instanceof FunctionValue) {  // running(header)
@@ -959,6 +965,10 @@ public class CalculatedStyle {
     }
 
     public boolean requiresLayer() {
+    	if (!isIdent(CSSName.TRANSFORM, IdentValue.NONE)) {
+    		return true;
+    	}
+    	
         FSDerivedValue value = valueByName(CSSName.POSITION);
 
         if (value instanceof FunctionValue) {  // running(header)
@@ -972,12 +982,9 @@ public class CalculatedStyle {
             }
 
             IdentValue overflow = getIdent(CSSName.OVERFLOW);
-            if ((overflow == IdentValue.SCROLL || overflow == IdentValue.AUTO) &&
-                    isOverflowApplies()) {
-                return true;
-            }
+            return (overflow == IdentValue.SCROLL || overflow == IdentValue.AUTO) &&
+                    isOverflowApplies();
 
-            return false;
         }
     }
 
@@ -990,7 +997,7 @@ public class CalculatedStyle {
         FunctionValue value = (FunctionValue)valueByName(CSSName.POSITION);
         FSFunction function = value.getFunction();
 
-        PropertyValue param = (PropertyValue)function.getParameters().get(0);
+        PropertyValue param = function.getParameters().get(0);
 
         return param.getStringValue();
     }
@@ -1027,6 +1034,18 @@ public class CalculatedStyle {
 
     public boolean isListItem() {
         return isIdent(CSSName.DISPLAY, IdentValue.LIST_ITEM);
+    }
+    
+    public boolean hasColumns() {
+        return !isIdent(CSSName.COLUMN_COUNT, IdentValue.AUTO) && asFloat(CSSName.COLUMN_COUNT) > 1;
+    }
+    
+    public int columnCount() {
+    	return (int) asFloat(CSSName.COLUMN_COUNT);
+    }
+    
+    public int fsMaxOverflowPages() {
+        return (int) asFloat(CSSName.FS_MAX_OVERFLOW_PAGES);
     }
 
 	/**
@@ -1078,6 +1097,14 @@ public class CalculatedStyle {
         return val == IdentValue.ALWAYS || val == IdentValue.LEFT
                 || val == IdentValue.RIGHT;
     }
+    
+    public boolean isColumnBreakBefore() {
+        return isIdent(CSSName.BREAK_BEFORE, IdentValue.COLUMN);
+    }
+    
+    public boolean isColumnBreakAfter() {
+        return isIdent(CSSName.BREAK_AFTER, IdentValue.COLUMN);
+    }
 
     public boolean isAvoidPageBreakInside() {
         return isIdent(CSSName.PAGE_BREAK_INSIDE, IdentValue.AVOID);
@@ -1128,6 +1155,13 @@ public class CalculatedStyle {
         return isIdent(CSSName.MAX_HEIGHT, IdentValue.NONE);
     }
 
+    public boolean isImageRenderingPixelated() {
+        return isIdent(CSSName.IMAGE_RENDERING, IdentValue.PIXELATED) || isIdent(CSSName.IMAGE_RENDERING, IdentValue.CRISP_EDGES);
+    }
+    public boolean isImageRenderingInterpolate(){
+        return !isImageRenderingPixelated();
+    }
+
     public int getMinWidth(CssContext c, int cbWidth) {
         return (int) getFloatPropertyProportionalTo(CSSName.MIN_WIDTH, cbWidth, c);
     }
@@ -1145,7 +1179,10 @@ public class CalculatedStyle {
     }
 
     public boolean isCollapseBorders() {
-        return isIdent(CSSName.BORDER_COLLAPSE, IdentValue.COLLAPSE) && ! isPaginateTable();
+    	// The second part of this condition was commented out by @danfickle because seems unneccessary
+    	// See https://github.com/danfickle/openhtmltopdf/issues/97
+    	
+        return isIdent(CSSName.BORDER_COLLAPSE, IdentValue.COLLAPSE); // && ! isPaginateTable();
     }
 
     public int getBorderHSpacing(CssContext c) {
@@ -1196,18 +1233,15 @@ public class CalculatedStyle {
                 isIdent(CSSName.BACKGROUND_IMAGE, IdentValue.NONE));
     }
 
-    public List getTextDecorations() {
+    public List<IdentValue> getTextDecorations() {
         FSDerivedValue value = valueByName(CSSName.TEXT_DECORATION);
         if (value == IdentValue.NONE) {
             return null;
         } else {
-            List idents = ((ListValue) value).getValues();
-            List result = new ArrayList(idents.size());
-            for (Iterator i = idents.iterator(); i.hasNext();) {
-                result.add(DerivedValueFactory.newDerivedValue(
-                        this, CSSName.TEXT_DECORATION, (PropertyValue) i.next()));
-            }
-            return result;
+            List<PropertyValue> idents = ((ListValue) value).getValues();
+            return idents.stream()
+                    .map(val -> (IdentValue) DerivedValueFactory.newDerivedValue(this, CSSName.TEXT_DECORATION, val))
+                    .collect(Collectors.toList());
         }
     }
 
@@ -1284,8 +1318,98 @@ public class CalculatedStyle {
     public boolean isCanBeShrunkToFit() {
         return isInlineBlock() || isFloated() || isAbsolute() || isFixed();
     }
+    
+    public boolean isDirectionLTR() {
+    	return isIdent(CSSName.DIRECTION, IdentValue.LTR);
+    }
+    
+    public boolean isDirectionRTL() {
+    	return isIdent(CSSName.DIRECTION, IdentValue.RTL);
+    }
+    
+    public boolean isDirectionAuto() {
+    	return isIdent(CSSName.DIRECTION, IdentValue.AUTO);
+    }
 
-}// end class
+	public IdentValue getDirection() {
+		return getIdent(CSSName.DIRECTION);
+	}
+	
+	public boolean hasLetterSpacing() {
+	    return !isIdent(CSSName.LETTER_SPACING, IdentValue.NORMAL);
+	}
+	
+	public boolean isParagraphContainerForBidi() {
+		IdentValue display = getIdent(CSSName.DISPLAY);
+		
+		return (display != IdentValue.INLINE &&
+				display != IdentValue.INLINE_BLOCK &&
+				display != IdentValue.INLINE_TABLE) ||
+				isNonFlowContent();
+	}
+	
+	/**
+	 * @return true for border-box, false for content-box.
+	 */
+    public boolean isBorderBox() {
+        return isIdent(CSSName.BOX_SIZING, IdentValue.BORDER_BOX);
+    }
+	
+	/**
+	 * Aims to get the correct resolved max-width for a box in dots unit.
+	 * Returns -1 if there is no max-width defined.
+	 * Assumptions: box has a containing block.
+	 */
+	public static int getCSSMaxWidth(CssContext c, Box box) {
+		if (box.getStyle().isMaxWidthNone()) {
+			return -1;
+		}
+		
+	    return box.getStyle().getMaxWidth(c, box.getContainingBlock().getContentWidth());
+	}
+
+	/**
+	 * Aims to get the correct resolved max-height for a box in dots unit.
+	 * returns -1 if there is no max-height defined.
+	 * Assumptions: box has a containing block.
+	 */
+	public static int getCSSMaxHeight(CssContext c, Box box) {
+		if (box.getStyle().isMaxHeightNone()) {
+			return -1;
+		}
+		
+		Length cssMaxHeight = box.getStyle().asLength(c, CSSName.MAX_HEIGHT);
+
+		/* 	MDN says:
+		 *  The percentage is calculated with respect to the height of the generated box's containing block.
+		 *  If the height of the containing block is not specified explicitly (i.e., it depends on content height),
+		 *  and this element is not absolutely positioned, the percentage value is treated as none.*/
+		
+		if (cssMaxHeight.isPercent() &&
+			box.getContainingBlock().getStyle().hasAbsoluteUnit(CSSName.HEIGHT)) {
+			return (int) (cssMaxHeight.value() * box.getContainingBlock().getStyle().asLength(c, CSSName.HEIGHT).value() / 100f);
+		} else if (cssMaxHeight.isPercent()) {
+			return -1;
+		} else {
+			return (int) cssMaxHeight.value();
+		}
+	}
+
+    public boolean isLinearGradient() {
+        FSDerivedValue value = valueByName(CSSName.BACKGROUND_IMAGE);    	
+        return value instanceof FunctionValue &&
+               Objects.equals(((FunctionValue) value).getFunction().getName(), "linear-gradient");
+    }
+
+    public FSLinearGradient getLinearGradient(CssContext cssContext, int boxWidth, int boxHeight) {
+        if (!isLinearGradient()) {
+            return null;
+        }
+
+        FunctionValue value = (FunctionValue) valueByName(CSSName.BACKGROUND_IMAGE);
+        return new FSLinearGradient(this, value.getFunction(), boxWidth, boxHeight, cssContext);
+    }
+}
 
 /*
  * $Id$

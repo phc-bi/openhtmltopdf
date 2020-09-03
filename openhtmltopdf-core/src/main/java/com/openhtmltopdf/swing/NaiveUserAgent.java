@@ -26,42 +26,36 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.logging.Level;
 
 import javax.imageio.ImageIO;
 
 import com.openhtmltopdf.event.DocumentListener;
-import com.openhtmltopdf.extend.FSCache;
 import com.openhtmltopdf.extend.FSUriResolver;
-import com.openhtmltopdf.extend.HttpStreamFactory;
-import com.openhtmltopdf.extend.HttpStream;
+import com.openhtmltopdf.extend.FSStreamFactory;
+import com.openhtmltopdf.extend.FSStream;
 import com.openhtmltopdf.extend.UserAgentCallback;
 import com.openhtmltopdf.resource.CSSResource;
 import com.openhtmltopdf.resource.ImageResource;
 import com.openhtmltopdf.resource.XMLResource;
 import com.openhtmltopdf.util.ImageUtil;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.XRLog;
 
 /**
  * <p>NaiveUserAgent is a simple implementation of {@link UserAgentCallback} which places no restrictions on what
- * XML, CSS or images are loaded, and reports visited links without any filtering. The most straightforward process
- * available in the JDK is used to load the resources in question--either using java.io or java.net classes.
+ * XML, CSS or images are loaded.</p>
  *
- * <p>The NaiveUserAgent has a small cache for images,
- * the size of which (number of images) can be passed as a constructor argument. There is no automatic cleaning of
- * the cache; call {@link #shrinkImageCache()} to remove the least-accessed elements--for example, you might do this
- * when a new document is about to be loaded. The NaiveUserAgent is also a DocumentListener; if registered with a
- * source of document events (like the panel hierarchy), it will respond to the
- * {@link com.openhtmltopdf.event.DocumentListener#documentStarted()} call and attempt to shrink its cache.
- *
- * <p>This class is meant as a starting point--it will work out of the box, but you should really implement your
- * own, tuned to your application's needs.
+ * <p>The NaiveUserAgent has a simple per-run cache for images so that the same image is not embedded in a document
+ *  multiple times.</p>
  *
  * @author Torbjoern Gannholm
  */
@@ -69,18 +63,16 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
 
     /**
      * a (simple) cache
-     * This is only useful for the one run. For more than one run, set an external cache with
-     * setFSCache.
+     * This is only useful for the one run.
      */
-    protected final LinkedHashMap<String, ImageResource> _imageCache = new LinkedHashMap<String, ImageResource>();
+    protected final LinkedHashMap<String, ImageResource> _imageCache = new LinkedHashMap<>();
     protected final FSUriResolver DEFAULT_URI_RESOLVER = new DefaultUriResolver(); 
 
-    protected HttpStreamFactory _streamFactory = new DefaultHttpStreamFactory();
-    protected FSCache _externalCache = new NullFSCache(false);
     protected FSUriResolver _resolver = DEFAULT_URI_RESOLVER;
     protected String _baseUri;
+	protected Map<String, FSStreamFactory> _protocolsStreamFactory = new HashMap<>(2);
     
-    public static class DefaultHttpStream implements HttpStream {
+    public static class DefaultHttpStream implements FSStream {
     	private InputStream strm;
     	
     	public DefaultHttpStream(InputStream strm) {
@@ -94,67 +86,40 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
 
 		@Override
 		public Reader getReader() {
-			try {
-				return new InputStreamReader(this.strm, "UTF-8");
-			} catch (UnsupportedEncodingException e) {
-				XRLog.exception("Exception when creating stream reader", e);
+			if (this.strm != null) {
+				return new InputStreamReader(this.strm, StandardCharsets.UTF_8);
 			}
 			return null;
 		}
     }
     
-    public static class DefaultHttpStreamFactory implements HttpStreamFactory {
+    public static class DefaultHttpStreamFactory implements FSStreamFactory {
 
 		@Override
-		public HttpStream getUrl(String uri) {
+		public FSStream getUrl(String uri) {
 			InputStream is = null;
 			
 	        try {
 	            is = new URL(uri).openStream();
 	        } catch (java.net.MalformedURLException e) {
-	            XRLog.exception("bad URL given: " + uri, e);
+				XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_MALFORMED_URL, uri, e);
 	        } catch (java.io.FileNotFoundException e) {
-	            XRLog.exception("item at URI " + uri + " not found");
+				XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_ITEM_AT_URI_NOT_FOUND, uri, e);
 	        } catch (java.io.IOException e) {
-	            XRLog.exception("IO problem for " + uri, e);
+				XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_IO_PROBLEM_FOR_URI, uri, e);
 	        }
 	        return new DefaultHttpStream(is);
 		}
     }
     
-    public static class NullFSCache implements FSCache {
-    	
-    	private final boolean _log;
-    	
-    	public NullFSCache(boolean log) {
-    		this._log = log;
-    	}
-    	
-		@Override
-		public Object get(FSCacheKey cacheKey) {
-			if (_log) {
-				XRLog.load(Level.INFO, "Trying to retrieve object from cache: " + cacheKey.toString());
-			}
-			return null;
-		}
-
-		@Override
-		public void put(FSCacheKey cacheKey, Object obj) {
-			if (_log) {
-				XRLog.load(Level.INFO, "Trying to put object in cache: " + cacheKey.toString());
-			}
-		}
-    }
-    
     public NaiveUserAgent() {
-    }
-
-    public void setHttpStreamFactory(HttpStreamFactory factory) {
-    	this._streamFactory = factory;
+    	FSStreamFactory factory = new DefaultHttpStreamFactory();
+    	this._protocolsStreamFactory.put("http", factory);
+    	this._protocolsStreamFactory.put("https", factory);
     }
     
-    public void setExternalCache(FSCache cache) {
-    	this._externalCache = cache;
+    public void setProtocolsStreamFactory(Map<String, FSStreamFactory> protocolsStreamFactory) {
+    	this._protocolsStreamFactory = protocolsStreamFactory;
     }
 
     public void setUriResolver(FSUriResolver resolver) {
@@ -168,8 +133,17 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
     /**
      * Empties the image cache entirely.
      */
+    @Deprecated
     public void clearImageCache() {
         _imageCache.clear();
+    }
+    
+    protected FSStreamFactory getProtocolFactory(String protocol) {
+    	return _protocolsStreamFactory.get(protocol);
+    }
+    
+    protected boolean hasProtocolFactory(String protocol) {
+    	return _protocolsStreamFactory.containsKey(protocol);
     }
 
     /**
@@ -179,26 +153,26 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
         java.io.InputStream is = null;
         
         try {
-			URL urlObj = new URL(uri);
+			URI urlObj = new URI(uri);
+			String protocol = urlObj.getScheme();
 
-			if (urlObj.getProtocol().equalsIgnoreCase("http") ||
-				urlObj.getProtocol().equalsIgnoreCase("https")) {
-				return _streamFactory.getUrl(uri).getStream();
+			if (hasProtocolFactory(protocol)) {
+				return getProtocolFactory(protocol).getUrl(uri).getStream();
 			}
 			else {
 		        try {
 		            is = new URL(uri).openStream();
 		        } catch (java.net.MalformedURLException e) {
-		            XRLog.exception("bad URL given: " + uri, e);
+		        	XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_MALFORMED_URL, uri, e);
 		        } catch (java.io.FileNotFoundException e) {
-		            XRLog.exception("item at URI " + uri + " not found");
+		        	XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_ITEM_AT_URI_NOT_FOUND, uri, e);
 		        } catch (java.io.IOException e) {
-		            XRLog.exception("IO problem for " + uri, e);
+		        	XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_IO_PROBLEM_FOR_URI, uri, e);
 		        }
 			}
-        } catch (MalformedURLException e2) {
-        	XRLog.exception("bad URL given: " + uri, e2);
-        }
+        } catch (URISyntaxException e1) {
+			XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_MALFORMED_URL, uri, e1);
+		}
 
         return is;
     }
@@ -210,63 +184,58 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
     	InputStream is = null;
     	
         try {
-			URL urlObj = new URL(uri);
+			URI urlObj = new URI(uri);
+			String protocol = urlObj.getScheme();
 
-			if (urlObj.getProtocol().equalsIgnoreCase("http") ||
-				urlObj.getProtocol().equalsIgnoreCase("https")) {
-				return _streamFactory.getUrl(uri).getReader();
+			if (hasProtocolFactory(protocol)) {
+				return getProtocolFactory(protocol).getUrl(uri).getReader();
 			}
 			else {
 		        try {
 		            is = new URL(uri).openStream();
 		        } catch (java.net.MalformedURLException e) {
-		            XRLog.exception("bad URL given: " + uri, e);
+					XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_MALFORMED_URL, uri, e);
 		        } catch (java.io.FileNotFoundException e) {
-		            XRLog.exception("item at URI " + uri + " not found");
+					XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_ITEM_AT_URI_NOT_FOUND, uri, e);
 		        } catch (java.io.IOException e) {
-		            XRLog.exception("IO problem for " + uri, e);
+					XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_IO_PROBLEM_FOR_URI, uri, e);
 		        }
 			}
-        } catch (MalformedURLException e2) {
-        	XRLog.exception("bad URL given: " + uri, e2);
-        }
-    	
-    	try {
-			return is == null ? null : new InputStreamReader(is, "UTF-8");
-		} catch (UnsupportedEncodingException e) {
-			XRLog.exception("Failed to create stream reader", e);
+        } catch (URISyntaxException e1) {
+			XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_MALFORMED_URL, uri, e1);
 		}
-    	
-    	return null;
+
+		return is == null ? null : new InputStreamReader(is, StandardCharsets.UTF_8);
+    }
+    
+    protected String readAll(Reader reader) throws IOException {
+    	char[] arr = new char[8 * 1024];
+    	StringBuilder buffer = new StringBuilder();
+    	int numCharsRead;
+    	while ((numCharsRead = reader.read(arr, 0, arr.length)) != -1) {
+    		buffer.append(arr, 0, numCharsRead);
+    	}
+    	return buffer.toString();
     }
     
     /**
      * Retrieves the CSS located at the given URI.  It's assumed the URI does point to a CSS file--the URI will
-     * be accessed (using the set HttpStreamFactory or URL::openStream), opened, read and then passed into the CSS parser.
+     * be resolved, accessed (using the set FSStreamFactory or URL::openStream), opened, read and then passed into the CSS parser.
      * The result is packed up into an CSSResource for later consumption.
      *
      * @param uri Location of the CSS source.
-     * @return A CSSResource containing the parsed CSS.
+     * @return A CSSResource containing the CSS reader or null if not available.
      */
     @Override
     public CSSResource getCSSResource(String uri) {
     	String resolved = _resolver.resolveURI(this._baseUri, uri);
     	
     	if (resolved == null) {
-    		XRLog.load(Level.INFO, "URI resolver rejected loading CSS resource at (" + uri + ")");
+    		XRLog.log(Level.INFO, LogMessageId.LogMessageId2Param.LOAD_URI_RESOLVER_REJECTED_LOADING_AT_URI, "CSS resource", uri);
     		return null;
     	}
     	
-    	FSCacheKey cacheKey = new FSCacheKey(resolved, CSSResource.class);
-    	CSSResource res = (CSSResource) _externalCache.get(cacheKey);
-    	
-    	if (res != null) {
-    		return res;
-    	}
-    	
-        CSSResource res2 = new CSSResource(openReader(resolved));
-        _externalCache.put(cacheKey, res2);
-        return res2;
+		return new CSSResource(openReader(resolved));
     }
 
     /**
@@ -279,7 +248,6 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
      */
     @Override
     public ImageResource getImageResource(String uri) {
-    	System.out.println("Getting image: " + uri);
         ImageResource ir;
         
         if (ImageUtil.isEmbeddedBase64Image(uri)) {
@@ -289,7 +257,7 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
             String resolved = _resolver.resolveURI(this._baseUri, uri);
             
             if (resolved == null) {
-        		XRLog.load(Level.INFO, "URI resolver rejected loading image resource at (" + uri + ")");
+            	XRLog.log(Level.INFO, LogMessageId.LogMessageId2Param.LOAD_URI_RESOLVER_REJECTED_LOADING_AT_URI, "image resource", uri);
         		return null;
         	}
             
@@ -297,12 +265,6 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
             ir = _imageCache.get(resolved);
             if (ir != null) {
             	return ir;
-            }
-            
-           	// Then check the external multi run cache.
-            AWTFSImage fsImage = (AWTFSImage) _externalCache.get(new FSCacheKey(resolved, AWTFSImage.class));
-            if (fsImage != null) {
-            	return new ImageResource(resolved, fsImage);
             }
             
             // Finally we fetch from the network or file, etc.
@@ -316,16 +278,15 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
                         }
                         
                         AWTFSImage fsImage2 = (AWTFSImage) AWTFSImage.createImage(img);
-                        _externalCache.put(new FSCacheKey(resolved, AWTFSImage.class), fsImage2);
                         
                         ir = new ImageResource(resolved, fsImage2);
                         _imageCache.put(resolved, ir);
                         
                         return ir;
                     } catch (FileNotFoundException e) {
-                        XRLog.exception("Can't read image file; image at URI '" + resolved + "' not found");
+                    	XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_CANT_READ_IMAGE_FILE_FOR_URI_NOT_FOUND, resolved);
                     } catch (IOException e) {
-                        XRLog.exception("Can't read image file; unexpected problem for URI '" + resolved + "'", e);
+						XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.EXCEPTION_CANT_READ_IMAGE_FILE_FOR_URI, uri, e);
                     } finally {
                         try {
                             is.close();
@@ -352,45 +313,30 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
     	String resolved = _resolver.resolveURI(this._baseUri, uri);
     	
     	if (resolved == null) {
-    		XRLog.load(Level.INFO, "URI resolver rejected loading XML resource at (" + uri + ")");
+    		XRLog.log(Level.INFO, LogMessageId.LogMessageId2Param.LOAD_URI_RESOLVER_REJECTED_LOADING_AT_URI, "XML resource", uri);
     		return null;
     	}
     	
-    	XMLResource res = (XMLResource) _externalCache.get(new FSCacheKey(resolved, XMLResource.class));
-    	if (res != null) {
-    		return res;
-    	}
-    	
-        Reader inputReader = openReader(resolved);
-        XMLResource xmlResource;
-
-        try {
-            xmlResource = XMLResource.load(inputReader);
-        } finally {
-            if (inputReader != null) {
-                try {
-                    inputReader.close();
-                } catch (IOException e) {
-                    // swallow
-                }
-            }
+        try (Reader inputReader = openReader(resolved)) {
+            return inputReader == null ? null :
+                        XMLResource.load(inputReader);
+        } catch (IOException e) {
+            // On auto close, swallow.
+            return null;
         }
-        _externalCache.put(new FSCacheKey(resolved, XMLResource.class), xmlResource);
-        return xmlResource;
     }
 
     @Override
     public byte[] getBinaryResource(String uri) {
-    	String resolved = _resolver.resolveURI(this._baseUri, uri);
+        if (ImageUtil.isDataUri(uri)) {
+            return ImageUtil.getEmbeddedDataUri(uri);
+        }
+
+        String resolved = _resolver.resolveURI(this._baseUri, uri);
     	
     	if (resolved == null) {
-    		XRLog.load(Level.INFO, "URI resolver rejected loading binary resource at (" + uri + ")");
+			XRLog.log(Level.INFO, LogMessageId.LogMessageId2Param.LOAD_URI_RESOLVER_REJECTED_LOADING_AT_URI, "binary resource", uri);
     		return null;
-    	}
-    	
-    	byte[] bytes = (byte[]) _externalCache.get(new FSCacheKey(resolved, byte[].class));
-    	if (bytes != null) {
-    		return bytes;
     	}
     	
         InputStream is = openStream(resolved);
@@ -409,7 +355,6 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
             is = null;
 
             byte[] bytes2 = result.toByteArray();
-            _externalCache.put(new FSCacheKey(resolved, byte[].class), bytes2);
             return bytes2;
         } catch (IOException e) {
             return null;
@@ -438,7 +383,7 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
     /**
      * URL relative to which URIs are resolved.
      *
-     * @param url A URI which anchors other, possibly relative URIs.
+     * @param uri A URI which anchors other, possibly relative URIs.
      */
     @Override
     public void setBaseURL(String uri) {
@@ -466,14 +411,29 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
 				
 				if (possiblyRelative.isAbsolute()) {
 					return possiblyRelative.toString();
+				} else {
+					if (baseUri == null) {
+						// If user hasn't provided base URI, just reject resolving relative URIs.
+						XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.LOAD_COULD_NOT_RESOLVE_RELATIVE_URI_BECAUSE_NO_BASE_URI_WAS_PROVIDED, uri);
+					    return null;
+					} else if (baseUri.startsWith("jar")) {
+				    	// Fix for OpenHTMLtoPDF issue-#125, URI class doesn't resolve jar: scheme urls and so returns only
+				    	// the relative part on calling base.resolve(relative) so we use the URL class instead which does
+				    	// understand jar: scheme urls.
+				    	URL base = new URL(baseUri);
+				        URL absolute = new URL(base, uri);
+				        return absolute.toString();
+				    } else {
+						URI base = new URI(baseUri);
+						URI absolute = base.resolve(uri);
+						return absolute.toString();				    	
+				    }
 				}
-				
-				URI base = new URI(baseUri);
-				URI absolute = base.resolve(uri);
-			
-				return absolute.toString();
 			} catch (URISyntaxException e) {
-				XRLog.exception("When trying to load uri(" + uri + ") with base URI(" + baseUri + "), one or both were invalid URIs.", e);
+				XRLog.log(Level.WARNING, LogMessageId.LogMessageId3Param.EXCEPTION_URI_WITH_BASE_URI_INVALID, uri, "", baseUri, e);
+				return null;
+			} catch (MalformedURLException e) {
+				XRLog.log(Level.WARNING, LogMessageId.LogMessageId3Param.EXCEPTION_URI_WITH_BASE_URI_INVALID, uri, "jar scheme", baseUri, e);
 				return null;
 			}
 		}
@@ -488,17 +448,21 @@ public class NaiveUserAgent implements UserAgentCallback, DocumentListener {
     }
 
     @Override
+    @Deprecated
     public void documentStarted() {
         clearImageCache();
     }
 
     @Override
+    @Deprecated
     public void documentLoaded() { /* ignore*/ }
 
     @Override
+    @Deprecated
     public void onLayoutException(Throwable t) { /* ignore*/ }
 
     @Override
+    @Deprecated
     public void onRenderException(Throwable t) { /* ignore*/ }
 
 	@Override

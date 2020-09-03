@@ -19,14 +19,13 @@
  */
 package com.openhtmltopdf.css.parser;
 
-import java.util.Iterator;
 import java.util.List;
 
 public class FSFunction {
-    private String _name;
-    private List _parameters;
-    
-    public FSFunction(String name, List parameters) {
+    private final String _name;
+    private final List<PropertyValue> _parameters;
+
+    public FSFunction(String name, List<PropertyValue> parameters) {
         _name = name;
         _parameters = parameters;
     }
@@ -35,17 +34,20 @@ public class FSFunction {
         return _name;
     }
     
-    public List getParameters() {
+    public List<PropertyValue> getParameters() {
         return _parameters;
     }
     
+    @Override
     public String toString() {
-        StringBuffer result = new StringBuffer();
+        StringBuilder result = new StringBuilder();
         result.append(_name);
         result.append('(');
-        for (Iterator i = _parameters.iterator(); i.hasNext(); ) {
-            result.append(i.next());  // HACK
-            result.append(',');
+        for (int i = 0; i < getParameters().size(); i++) {
+            result.append(getParameters().get(i));
+            if (i < getParameters().size() - 1) {
+                result.append(',');
+            }
         }
         result.append(')');
         return result.toString();

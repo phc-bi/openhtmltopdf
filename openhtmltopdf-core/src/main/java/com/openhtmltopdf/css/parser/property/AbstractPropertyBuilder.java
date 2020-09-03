@@ -23,16 +23,17 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 
-import org.w3c.dom.css.CSSPrimitiveValue;
-
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.IdentValue;
 import com.openhtmltopdf.css.parser.CSSParseException;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
+import com.openhtmltopdf.css.parser.CSSValue;
 import com.openhtmltopdf.css.parser.PropertyValue;
 import com.openhtmltopdf.css.sheet.PropertyDeclaration;
 
 public abstract class AbstractPropertyBuilder implements PropertyBuilder {
-    public List buildDeclarations(CSSName cssName, List values, int origin, boolean important) {
+    @Override
+    public List<PropertyDeclaration> buildDeclarations(CSSName cssName, List<PropertyValue> values, int origin, boolean important) {
         return buildDeclarations(cssName, values, origin, important, true);
     }
     
@@ -131,10 +132,12 @@ public abstract class AbstractPropertyBuilder implements PropertyBuilder {
         }
     }
     
-    protected void checkStringType(CSSName cssName, CSSPrimitiveValue value) {
-        if (value.getPrimitiveType() != CSSPrimitiveValue.CSS_STRING) {
-            throw new CSSParseException("Value for " + cssName + " must be a string", -1);
-        }
+    protected void checkAngleType(CSSName cssName, CSSPrimitiveValue value) {
+    	if (value.getPrimitiveType() != CSSPrimitiveValue.CSS_DEG &&
+    		value.getPrimitiveType() != CSSPrimitiveValue.CSS_RAD &&
+    		value.getPrimitiveType() != CSSPrimitiveValue.CSS_GRAD) {
+    		throw new CSSParseException("Value for " + cssName + "must be an angle (degrees, radians or grads)", -1);
+    	}
     }
     
     protected void checkIdentOrString(CSSName cssName, CSSPrimitiveValue value) {
@@ -155,11 +158,16 @@ public abstract class AbstractPropertyBuilder implements PropertyBuilder {
     }
     
     protected boolean isLength(CSSPrimitiveValue value) {
+        return isLengthHelper(value);
+    }
+
+    public static boolean isLengthHelper(CSSPrimitiveValue value) {
         int unit = value.getPrimitiveType();
         return unit == CSSPrimitiveValue.CSS_EMS || unit == CSSPrimitiveValue.CSS_EXS
                 || unit == CSSPrimitiveValue.CSS_PX || unit == CSSPrimitiveValue.CSS_IN
                 || unit == CSSPrimitiveValue.CSS_CM || unit == CSSPrimitiveValue.CSS_MM
                 || unit == CSSPrimitiveValue.CSS_PT || unit == CSSPrimitiveValue.CSS_PC
+                || unit == CSSPrimitiveValue.CSS_REMS
                 || (unit == CSSPrimitiveValue.CSS_NUMBER && value.getFloatValue(CSSPrimitiveValue.CSS_IN) == 0.0f);
     }
     
@@ -183,17 +191,17 @@ public abstract class AbstractPropertyBuilder implements PropertyBuilder {
     }
     
     protected void checkInheritAllowed(CSSPrimitiveValue value, boolean inheritAllowed) {
-        if (value.getCssValueType() == CSSPrimitiveValue.CSS_INHERIT && ! inheritAllowed) {
+        if (value.getCssValueType() == CSSValue.CSS_INHERIT && ! inheritAllowed) {
             throw new CSSParseException("Invalid use of inherit", -1);
         }
     }
 
-    protected List checkInheritAll(CSSName[] all, List values, int origin, boolean important, boolean inheritAllowed) {
+    protected List<PropertyDeclaration> checkInheritAll(CSSName[] all, List<PropertyValue> values, int origin, boolean important, boolean inheritAllowed) {
         if (values.size() == 1) {
-            CSSPrimitiveValue value = (CSSPrimitiveValue)values.get(0);
+            CSSPrimitiveValue value = values.get(0);
             checkInheritAllowed(value, inheritAllowed);
-            if (value.getCssValueType() == CSSPrimitiveValue.CSS_INHERIT) {
-                List result = new ArrayList(all.length);
+            if (value.getCssValueType() == CSSValue.CSS_INHERIT) {
+                List<PropertyDeclaration> result = new ArrayList<>(all.length);
                 for (int i = 0; i < all.length; i++) {
                     result.add(
                             new PropertyDeclaration(all[i], value, important, origin));

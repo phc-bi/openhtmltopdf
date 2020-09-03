@@ -18,8 +18,13 @@
  */
 package com.openhtmltopdf.simple.extend;
 
+import java.util.logging.Level;
+
+import com.openhtmltopdf.util.LogMessageId;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+
+import com.openhtmltopdf.util.XRLog;
 
 
 /**
@@ -30,6 +35,8 @@ import org.w3c.dom.Node;
  * @author Torbjoern Gannholm
  */
 public class XhtmlNamespaceHandler extends XhtmlCssOnlyNamespaceHandler {
+    private static final String DEFAULT_SVG_DIMS = "";
+    
     /**
      * {@inheritDoc}
      */
@@ -45,29 +52,103 @@ public class XhtmlNamespaceHandler extends XhtmlCssOnlyNamespaceHandler {
     }
 
     public String getImageSourceURI(Element e) {
-        String uri = null;
-        if (e != null) {
-            uri = e.getAttribute("src");
-        }
-        return uri;
+        return e != null ? e.getAttribute("src") : null;
     }
 
     public String getNonCssStyling(Element e) {
-        if (e.getNodeName().equals("table")) {
-            return applyTableStyles(e);            
-        } else if (e.getNodeName().equals("td") || e.getNodeName().equals("th")) {
+        switch(e.getNodeName()) {
+        case "table":
+            return applyTableStyles(e);
+        case "td": /* FALL-THRU */
+        case "th":
             return applyTableCellStyles(e);
-        } else if (e.getNodeName().equals("tr")) {
+        case "tr":
             return applyTableRowStyles(e);
-        } else if (e.getNodeName().equals("img")) {
+        case "img":
             return applyImgStyles(e);
-        } else if (e.getNodeName().equals("p") || e.getNodeName().equals("div")) {
+        case "p": /* FALL-THRU */
+        case "div":
             return applyBlockAlign(e);
-        } else if (e.getNodeName().equals("textarea")) {
-        	return applyTextareaStyles(e);
+        case "textarea":
+            return applyTextareaStyles(e);
+        case "input":
+            return applyInputStyles(e);
+        case "svg":
+            return applySvgStyles(e);
         }
         
         return "";
+    }
+    
+    private String applySvgStyles(Element e) {
+        String w = e.getAttribute("width");
+        String h = e.getAttribute("height");
+        
+        if (!w.isEmpty() || !h.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            
+            if (!w.isEmpty()) {
+                sb.append("width: ");
+                sb.append(w);
+                if (isInteger(w)) {
+                    sb.append("px");
+                }
+                sb.append(';');
+            }
+            
+            if (!h.isEmpty()) {
+                sb.append("height: ");
+                sb.append(h);
+                if (isInteger(h)) {
+                    sb.append("px");
+                }
+                sb.append(';');
+            }
+            
+            return sb.toString();
+        }
+        
+        String viewBoxAttr = e.getAttribute("viewBox");
+        String[] splitViewBox = viewBoxAttr.split("\\s+");
+        
+        if (splitViewBox.length != 4) {
+            return DEFAULT_SVG_DIMS;
+        }
+        try {
+            int viewBoxWidth = Integer.parseInt(splitViewBox[2]);
+            int viewBoxHeight = Integer.parseInt(splitViewBox[3]);
+            
+            StringBuilder sb = new StringBuilder();
+            
+            sb.append("width: ");
+            sb.append(viewBoxWidth);
+            sb.append("px;");
+            
+            sb.append("height: ");
+            sb.append(viewBoxHeight);
+            sb.append("px;");
+        } catch (NumberFormatException ex) {
+            XRLog.log(Level.WARNING, LogMessageId.LogMessageId1Param.GENERAL_INVALID_INTEGER_PASSED_IN_VIEWBOX_ATTRIBUTE_FOR_SVG, viewBoxAttr);
+            /* FALL-THRU */
+        }
+        
+        return DEFAULT_SVG_DIMS;
+    }
+    
+    private String applyInputStyles(Element e) {
+    	StringBuilder sb = new StringBuilder();
+    	
+    	if (e.hasAttribute("width") && isInteger(e.getAttribute("width"))) {
+    		sb.append("width: ");
+    		sb.append(e.getAttribute("width"));
+    		sb.append("px;");
+    	} else if (e.hasAttribute("size") && isInteger(e.getAttribute("size"))) {
+    		sb.append("width: ");
+    		sb.append(e.getAttribute("size"));
+    		sb.append("em;");
+    	}
+    	
+    	return sb.toString();
     }
     
     private String applyTextareaStyles(Element e) {
@@ -89,19 +170,19 @@ public class XhtmlNamespaceHandler extends XhtmlCssOnlyNamespaceHandler {
     }
     
     private String applyBlockAlign(Element e) {
-        StringBuffer style = new StringBuffer();
+        StringBuilder style = new StringBuilder();
         applyTextAlign(e, style);
         return style.toString();
     }
     
     private String applyImgStyles(Element e) {
-        StringBuffer style = new StringBuffer();
+        StringBuilder style = new StringBuilder();
         applyFloatingAlign(e, style);
         return style.toString();
     }
 
     private String applyTableCellStyles(Element e) {
-        StringBuffer style = new StringBuffer();
+        StringBuilder style = new StringBuilder();
         String s;
         //check for cellpadding
         Element table = findTable(e);
@@ -152,7 +233,7 @@ public class XhtmlNamespaceHandler extends XhtmlCssOnlyNamespaceHandler {
     }
 
     private String applyTableStyles(Element e) {
-        StringBuffer style = new StringBuffer();
+        StringBuilder style = new StringBuilder();
         String s;
         s = getAttribute(e, "width");
         if (s != null) {
@@ -195,12 +276,12 @@ public class XhtmlNamespaceHandler extends XhtmlCssOnlyNamespaceHandler {
     }
     
     private String applyTableRowStyles(Element e) {
-        StringBuffer style = new StringBuffer();
+        StringBuilder style = new StringBuilder();
         applyTableContentAlign(e, style);
         return style.toString();
     }
     
-    private void applyFloatingAlign(Element e, StringBuffer style) {
+    private void applyFloatingAlign(Element e, StringBuilder style) {
         String s;
         s = getAttribute(e, "align");
         if (s != null) {
@@ -215,7 +296,7 @@ public class XhtmlNamespaceHandler extends XhtmlCssOnlyNamespaceHandler {
         }
     }
     
-    private void applyTextAlign(Element e, StringBuffer style) {
+    private void applyTextAlign(Element e, StringBuilder style) {
         String s;
         s = getAttribute(e, "align");
         if (s != null) {
@@ -229,7 +310,7 @@ public class XhtmlNamespaceHandler extends XhtmlCssOnlyNamespaceHandler {
         }
     }
     
-    private void applyTableContentAlign(Element e, StringBuffer style) {
+    private void applyTableContentAlign(Element e, StringBuilder style) {
         String s;
         s = getAttribute(e, "align");
         if (s != null) {

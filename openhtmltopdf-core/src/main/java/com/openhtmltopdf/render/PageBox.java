@@ -26,15 +26,13 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
-
 import org.w3c.dom.Element;
-import org.w3c.dom.css.CSSPrimitiveValue;
 
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.constants.IdentValue;
 import com.openhtmltopdf.css.constants.MarginBoxName;
 import com.openhtmltopdf.css.newmatch.PageInfo;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
 import com.openhtmltopdf.css.parser.FSFunction;
 import com.openhtmltopdf.css.parser.PropertyValue;
 import com.openhtmltopdf.css.sheet.PropertyDeclaration;
@@ -42,10 +40,12 @@ import com.openhtmltopdf.css.style.CalculatedStyle;
 import com.openhtmltopdf.css.style.CssContext;
 import com.openhtmltopdf.css.style.derived.LengthValue;
 import com.openhtmltopdf.css.style.derived.RectPropertySet;
+import com.openhtmltopdf.extend.StructureType;
 import com.openhtmltopdf.layout.BoxBuilder;
 import com.openhtmltopdf.layout.Layer;
 import com.openhtmltopdf.layout.LayoutContext;
 import com.openhtmltopdf.newtable.TableBox;
+import com.openhtmltopdf.render.simplepainter.SimplePainter;
 import com.openhtmltopdf.util.ThreadCtx;
 
 public class PageBox {
@@ -83,6 +83,25 @@ public class PageBox {
     private MarginAreaContainer[] _marginAreas = new MarginAreaContainer[MARGIN_AREA_DEFS.length];
     
     private Element _metadata;
+    
+    private int _basePagePdfPageIndex;
+    private int _shadowPageCount;
+    
+    public void setBasePagePdfPageIndex(int idx) {
+        this._basePagePdfPageIndex = idx;
+    }
+    
+    public void setShadowPageCount(int cnt) {
+        this._shadowPageCount = cnt;
+    }
+    
+    public int getBasePagePdfPageIndex() {
+        return _basePagePdfPageIndex;
+    }
+    
+    public int getShadowPageCount() {
+        return _shadowPageCount;
+    }
     
     public int getWidth(CssContext cssCtx) {
         resolvePageDimensions(cssCtx);
@@ -234,6 +253,12 @@ public class PageBox {
         _paintingBottom = paintingBottom;
     }
 
+    /**
+     * Example: If a page is 100 units high and has a 10 unit margin,
+     * this will return 0 for the first page and 80 for the second and so on.
+     * 
+     * @return the y index into the document coordinates.
+     */
     public int getPaintingTop() {
         return _paintingTop;
     }
@@ -252,6 +277,79 @@ public class PageBox {
         return new Rectangle(
                 0, 0,
                 getWidth(cssCtx), getHeight(cssCtx));
+    }
+    
+    /**
+     * Get the rectangle that this page's content area will cover of the layed out document.
+     * For example: If a page is 100 units high and 150 wide and has a margin of 10 then this method will
+     * return a rect(0, 0, 130, 80) for the first page and a rect(0, 80, 130, 80) for the second and so on.
+     */
+    public Rectangle getDocumentCoordinatesContentBounds(CssContext c) {
+    	return new Rectangle(
+    			0,
+    			getPaintingTop(),
+    			getContentWidth(c),
+    			getContentHeight(c));
+    }
+    
+    /**
+     * Get the shadow page (a page inserted to carry cut off content) content area of the layed out document.
+     * For example: If a page one is 100 units high and 150 wide and has a margin of 10 then this will return a
+     * rect(130, 0, 130, 80) for the first shadow page and a rect(260, 0, 130, 80) for the second shadow page
+     * assuming cut-off direction is LTR.
+     * 
+     * For RTL the rects would be rect(-130, 0, 130, 80) and rect(-260, 0, 130, 80).
+     */
+    public Rectangle getDocumentCoordinatesContentBoundsForInsertedPage(CssContext c, int shadowPageNumber) {
+        return new Rectangle(
+                getContentWidth(c) * (shadowPageNumber + 1) * (getCutOffPageDirection() == IdentValue.LTR ? 1 : -1),
+                getPaintingTop(),
+                getContentWidth(c),
+                getContentHeight(c));
+    }
+    
+
+    /**
+     * Returns the number of shadow pages needed for a given x coordinate.
+     * For example if x = 800 and content width = 1000 returns 0 (assumes LTR).
+     * For example if x = 2400 and content width = 900 returns 2 (assumes LTR).
+     */
+    public int getMaxShadowPagesForXPos(CssContext c, int x) {
+        IdentValue dir = getCutOffPageDirection();
+        float fx = (float) x;
+        float fw = (float) getContentWidth(c);
+        
+        if (fw == 0f) {
+            return 0;
+        }
+        
+        if (dir == IdentValue.LTR) { 
+            return (int) (x > 0 ? (Math.ceil(fx / fw) - 1) : 0);
+        }
+        
+        return (int) (x < 0 ? (Math.ceil(Math.abs(fx) / fw)) : 0);
+    }
+    
+    /**
+     * Should shadow pages be inserted for cut off content for this page.
+     */
+    public boolean shouldInsertPages() {
+        return getMaxInsertedPages() > 0;
+    }
+    
+    /**
+     * The maximum number of shadow pages to insert for cut-off content.
+     */
+    public int getMaxInsertedPages() {
+        return getStyle().fsMaxOverflowPages();
+    }
+    
+    /**
+     * @return Either ltr (should insert cut-off content to the right of the page) or
+     * rtl (should insert cut-off content to the left of the page).
+     */
+    public IdentValue getCutOffPageDirection() {
+        return getStyle().getIdent(CSSName.FS_OVERFLOW_PAGES_DIRECTION);
     }
     
     public Rectangle getPagedViewClippingBounds(CssContext cssCtx, int additionalClearance) {
@@ -312,20 +410,38 @@ public class PageBox {
         
         c.getOutputDevice().paintBackground(c, getStyle(), bounds, bounds, getStyle().getBorder(c));
     }
-    
+
+    private MarginAreaContainer currentMarginAreaContainer;
     public void paintMarginAreas(RenderingContext c, int additionalClearance, short mode) {
         for (int i = 0; i < MARGIN_AREA_DEFS.length; i++) {
             MarginAreaContainer container = _marginAreas[i];
+      
             if (container != null) {
+                currentMarginAreaContainer = container;
                 TableBox table = _marginAreas[i].getTable();
                 Point p = container.getArea().getPaintingPosition(
                         c, this, additionalClearance, mode);
-                
+
                 c.getOutputDevice().translate(p.x, p.y);
-                table.getLayer().paint(c);
+                if (c.getOutputDevice().isFastRenderer()) {
+                    table.getLayer().propagateCurrentTransformationMatrix(c);
+                    SimplePainter painter = new SimplePainter(p.x, p.y);
+                    Object token = c.getOutputDevice().startStructure(StructureType.RUNNING, table);
+                    painter.paintLayer(c, table.getLayer());
+                    c.getOutputDevice().endStructure(token);
+                } else {
+                    table.getLayer().paint(c);
+                }
                 c.getOutputDevice().translate(-p.x, -p.y);
             }
         }
+        currentMarginAreaContainer = null;
+    }
+
+    public MarginBoxName[] getCurrentMarginBoxNames() {
+        if( currentMarginAreaContainer == null )
+            return null;
+        return currentMarginAreaContainer.getArea().getMarginBoxNames();
     }
 
     public int getPageNo() {
@@ -346,7 +462,7 @@ public class PageBox {
     
     public int getMarginBorderPadding(CssContext cssCtx, int which) {
         return getStyle().getMarginBorderPadding(
-                cssCtx, (int)getOuterPageWidth(), which);
+                cssCtx, getOuterPageWidth(), which);
     }
 
     public PageInfo getPageInfo() {
@@ -370,16 +486,16 @@ public class PageBox {
     // HACK Would much prefer to do this in ITextRenderer or ITextOutputDevice
     // but given the existing API, this is about the only place it can be done
     private void retrievePageMetadata(LayoutContext c) {
-        List props = getPageInfo().getXMPPropertyList();
+        List<PropertyDeclaration> props = getPageInfo().getXMPPropertyList();
         if (props != null && props.size() > 0)
         {
-            for (Iterator i = props.iterator(); i.hasNext(); ) {
-                PropertyDeclaration decl = (PropertyDeclaration)i.next();
+            for (Iterator<PropertyDeclaration> i = props.iterator(); i.hasNext(); ) {
+                PropertyDeclaration decl = i.next();
                 if (decl.getCSSName() == CSSName.CONTENT) {
                     PropertyValue value = (PropertyValue)decl.getValue();
-                    List values = value.getValues();
+                    List<PropertyValue> values = value.getValues();
                     if (values.size() == 1) {
-                        PropertyValue funcVal = (PropertyValue)values.get(0);
+                        PropertyValue funcVal = values.get(0);
                         if (funcVal.getPropertyValueType() == PropertyValue.VALUE_TYPE_FUNCTION) {
                             FSFunction func = funcVal.getFunction();
                             if (BoxBuilder.isElementFunction(func)) {
@@ -494,7 +610,6 @@ public class PageBox {
     
     private static abstract class MarginArea {
         private final MarginBoxName[] _marginBoxNames;
-        private TableBox _table;
         
         public abstract Dimension getLayoutDimension(CssContext c, PageBox page, RectPropertySet margin);
         public abstract Point getPaintingPosition(
@@ -508,13 +623,6 @@ public class PageBox {
             _marginBoxNames = marginBoxNames;
         }
 
-        public TableBox getTable() {
-            return _table;
-        }
-
-        public void setTable(TableBox table) {
-            _table = table;
-        }
         
         public MarginBoxName[] getMarginBoxNames() {
             return _marginBoxNames;
@@ -747,5 +855,5 @@ public class PageBox {
             
             return new Point(left, top);
         }
-    } 
+    }
 }

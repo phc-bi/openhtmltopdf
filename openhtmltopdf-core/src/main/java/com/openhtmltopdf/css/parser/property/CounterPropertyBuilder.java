@@ -23,11 +23,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.w3c.dom.css.CSSPrimitiveValue;
-import org.w3c.dom.css.CSSValue;
-
 import com.openhtmltopdf.css.constants.CSSName;
 import com.openhtmltopdf.css.parser.CSSParseException;
+import com.openhtmltopdf.css.parser.CSSPrimitiveValue;
+import com.openhtmltopdf.css.parser.CSSValue;
 import com.openhtmltopdf.css.parser.CounterData;
 import com.openhtmltopdf.css.parser.PropertyValue;
 import com.openhtmltopdf.css.sheet.PropertyDeclaration;
@@ -39,9 +38,10 @@ public abstract class CounterPropertyBuilder extends AbstractPropertyBuilder {
     
     // XXX returns a PropertyValue of type VALUE_TYPE_LIST, but the List contains
     // CounterData objects and not PropertyValue objects
-    public List buildDeclarations(CSSName cssName, List values, int origin, boolean important, boolean inheritAllowed) {
+    @Override
+    public List<PropertyDeclaration> buildDeclarations(CSSName cssName, List<PropertyValue> values, int origin, boolean important, boolean inheritAllowed) {
         if (values.size() == 1) {
-            PropertyValue value = (PropertyValue)values.get(0);
+            PropertyValue value = values.get(0);
             
             checkInheritAllowed(value, inheritAllowed);
             
@@ -57,22 +57,22 @@ public abstract class CounterPropertyBuilder extends AbstractPropertyBuilder {
                     
                     return Collections.singletonList(
                             new PropertyDeclaration(cssName, new PropertyValue(
-                                    Collections.singletonList(data)), important, origin));
+                                    Collections.singletonList(data), true), important, origin));
                 }
             }
             
             throw new CSSParseException("The syntax of the " + cssName + " property is invalid", -1);
         } else {
-            List result = new ArrayList();
+            List<CounterData> result = new ArrayList<>();
             for (int i = 0; i < values.size(); i++) {
-                PropertyValue value = (PropertyValue)values.get(i);
+                PropertyValue value = values.get(i);
                 
                 if (value.getPrimitiveType() == CSSPrimitiveValue.CSS_IDENT) {
                     String name = value.getStringValue();
                     int cValue = getDefaultValue();
                     
                     if (i < values.size() - 1) {
-                        PropertyValue next = (PropertyValue)values.get(i+1);
+                        PropertyValue next = values.get(i+1);
                         if (next.getPrimitiveType() == CSSPrimitiveValue.CSS_NUMBER) {
                             checkNumberIsInteger(cssName, next);
                             
@@ -88,7 +88,7 @@ public abstract class CounterPropertyBuilder extends AbstractPropertyBuilder {
             }
             
             return Collections.singletonList(
-                    new PropertyDeclaration(cssName, new PropertyValue(result), important, origin));
+                    new PropertyDeclaration(cssName, new PropertyValue(result, true), important, origin));
         }
     }
     
@@ -101,12 +101,14 @@ public abstract class CounterPropertyBuilder extends AbstractPropertyBuilder {
     }
     
     public static class CounterReset extends CounterPropertyBuilder {
+        @Override
         protected int getDefaultValue() {
             return 0;
         }
     }
 
     public static class CounterIncrement extends CounterPropertyBuilder {
+        @Override
         protected int getDefaultValue() {
             return 1;
         }

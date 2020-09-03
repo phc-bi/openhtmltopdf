@@ -19,22 +19,21 @@
  */
 package com.openhtmltopdf.pdfboxout;
 
-import java.awt.Rectangle;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 
 import com.openhtmltopdf.bidi.BidiReorderer;
-import com.openhtmltopdf.extend.FSGlyphVector;
 import com.openhtmltopdf.extend.FontContext;
 import com.openhtmltopdf.extend.OutputDevice;
 import com.openhtmltopdf.extend.TextRenderer;
 import com.openhtmltopdf.pdfboxout.PdfBoxFontResolver.FontDescription;
-import com.openhtmltopdf.pdfboxout.PdfBoxOutputDevice.FontRun;
+import com.openhtmltopdf.pdfboxout.PdfBoxSlowOutputDevice.FontRun;
 import com.openhtmltopdf.render.FSFont;
 import com.openhtmltopdf.render.FSFontMetrics;
 import com.openhtmltopdf.render.JustificationInfo;
+import com.openhtmltopdf.util.LogMessageId;
 import com.openhtmltopdf.util.OpenUtil;
 import com.openhtmltopdf.util.ThreadCtx;
 import com.openhtmltopdf.util.XRLog;
@@ -48,35 +47,44 @@ public class PdfBoxTextRenderer implements TextRenderer {
         this._reorderer = reorderer;
     }
 
+    @Override
     public void drawString(OutputDevice outputDevice, String string, float x, float y) {
         ((PdfBoxOutputDevice)outputDevice).drawString(string, x, y, null);
     }
     
+    @Override
     public void drawString(
             OutputDevice outputDevice, String string, float x, float y, JustificationInfo info) {
         ((PdfBoxOutputDevice)outputDevice).drawString(string, x, y, info);
     }
 
+    @Override
     public FSFontMetrics getFSFontMetrics(FontContext context, FSFont font, String string) {
         List<FontDescription> descrs = ((PdfBoxFSFont) font).getFontDescription();
         float size = font.getSize2D();
         PdfBoxFSFontMetrics result = new PdfBoxFSFontMetrics();
         
-        try {
-            float largestAscent = Float.MIN_VALUE;
-            float largestDescent = Float.MIN_VALUE;
-            float largestStrikethroughOffset = Float.MIN_VALUE;
-            float largestStrikethroughThickness = Float.MIN_VALUE;
-            float largestUnderlinePosition = Float.MIN_VALUE;
-            float largestUnderlineThickness = Float.MIN_VALUE;
+            float largestAscent = -Float.MAX_VALUE;
+            float largestDescent = -Float.MAX_VALUE;
+            float largestStrikethroughOffset = -Float.MAX_VALUE;
+            float largestStrikethroughThickness = -Float.MAX_VALUE;
+            float largestUnderlinePosition = -Float.MAX_VALUE;
+            float largestUnderlineThickness = -Float.MAX_VALUE;
             
             for (FontDescription des : descrs) {
-                float loopAscent = des.getFont().getBoundingBox().getUpperRightY();
-                float loopDescent = -des.getFont().getBoundingBox().getLowerLeftY();
-                float loopStrikethroughOffset = -des.getYStrikeoutPosition();
-                float loopStrikethroughThickness = des.getYStrikeoutSize();
-                float loopUnderlinePosition = -des.getUnderlinePosition();
-                float loopUnderlineThickness = des.getUnderlineThickness();
+                PdfBoxRawPDFontMetrics metrics = des.getFontMetrics();
+
+                if (metrics == null) {
+                    XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.EXCEPTION_FONT_METRICS_NOT_AVAILABLE);
+                    continue;
+                }
+                
+                float loopAscent = metrics._ascent;
+                float loopDescent = metrics._descent;
+                float loopStrikethroughOffset = metrics._strikethroughOffset;
+                float loopStrikethroughThickness = metrics._strikethroughThickness;
+                float loopUnderlinePosition = metrics._underlinePosition;
+                float loopUnderlineThickness = metrics._underlineThickness;
                 
                 if (loopAscent > largestAscent) {
                     largestAscent = loopAscent;
@@ -115,9 +123,6 @@ public class PdfBoxTextRenderer implements TextRenderer {
             
             result.setUnderlineOffset(largestUnderlinePosition / 1000f * size);
             result.setUnderlineThickness(largestUnderlineThickness / 1000f * size);
-        } catch (IOException e) {
-            throw new PdfContentStreamAdapter.PdfException("getFSFontMetrics", e);
-        }
 
         return result;
     }
@@ -125,6 +130,10 @@ public class PdfBoxTextRenderer implements TextRenderer {
     private static class ReplacementChar {
         String replacement;
         FontDescription fontDescription;
+    }
+    
+    public static boolean isJustificationSpace(int c) {
+        return c == ' ' || c == '\u00a0' || c == '\u3000';
     }
     
     private static ReplacementChar getReplacementChar(FSFont font) {
@@ -164,7 +173,7 @@ public class PdfBoxTextRenderer implements TextRenderer {
         }
     
         // Really?, no font support for either replacement text or space!
-        XRLog.general("Specified fonts don't contain a space character!");
+        XRLog.log(Level.INFO, LogMessageId.LogMessageId0Param.GENERAL_PDF_SPECIFIED_FONTS_DONT_CONTAIN_A_SPACE_CHARACTER);
         ReplacementChar replace = new ReplacementChar();
         replace.replacement = "";
         replace.fontDescription = descriptions.get(0);
@@ -175,7 +184,7 @@ public class PdfBoxTextRenderer implements TextRenderer {
         StringBuilder sb = new StringBuilder();
         ReplacementChar replace = PdfBoxTextRenderer.getReplacementChar(font);
         List<FontDescription> fonts = ((PdfBoxFSFont) font).getFontDescription();
-        List<FontRun> runs = new ArrayList<FontRun>();
+        List<FontRun> runs = new ArrayList<>();
         FontRun current = new FontRun();
         
         for (int i = 0; i < str.length(); ) {
@@ -202,6 +211,12 @@ public class PdfBoxTextRenderer implements TextRenderer {
                         sb = new StringBuilder();
                     }
 
+                    if (isJustificationSpace(unicode)) {
+                        current.spaceCharacterCount++;
+                    } else {
+                        current.otherCharacterCount++;
+                    }
+                    
                     sb.append(ch);
                     gotChar = true;
                     break;
@@ -225,6 +240,13 @@ public class PdfBoxTextRenderer implements TextRenderer {
                                 current.des = des;
                                 sb = new StringBuilder();
                             }
+                            
+                            if (isJustificationSpace(unicode)) {
+                                current.spaceCharacterCount++;
+                            } else {
+                                current.otherCharacterCount++;
+                            }
+                            
                             sb.append(deshaped);
                             gotChar = true;
                             break FONT_LOOP;
@@ -252,12 +274,14 @@ public class PdfBoxTextRenderer implements TextRenderer {
                 }
                 
                 if (Character.isSpaceChar(unicode) || Character.isWhitespace(unicode)) {
+                    current.spaceCharacterCount++;
                     sb.append(' ');
                 }
                 else if (!OpenUtil.isCodePointPrintable(unicode)) {
                     // Do nothing
                 }
                 else {
+                    current.otherCharacterCount++;
                     sb.append(replace.replacement);
                 }
             }
@@ -279,7 +303,7 @@ public class PdfBoxTextRenderer implements TextRenderer {
             try {
                 strWidth += run.des.getFont().getStringWidth(run.str);
             } catch (Exception e) {
-                XRLog.render(Level.WARNING, "BUG. Font didn't contain expected character.", e);
+                XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.RENDER_BUG_FONT_DIDNT_CONTAIN_EXPECTED_CHARACTER, e);
             }
         }
 
@@ -291,14 +315,25 @@ public class PdfBoxTextRenderer implements TextRenderer {
         float result = 0f;
 
         try {
-            // First try using the first given font in the list.
-            result = ((PdfBoxFSFont) font).getFontDescription().get(0).getFont().getStringWidth(string) / 1000f * font.getSize2D();
+            if (((PdfBoxFSFont) font).getFontDescription() == null 
+                    || ((PdfBoxFSFont) font).getFontDescription().isEmpty()) {
+                XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.RENDER_FONT_LIST_IS_EMPTY);
+            } else {
+              // Go through the list of font descriptions
+              for (FontDescription fd : ((PdfBoxFSFont) font).getFontDescription()) {
+                 if (fd.getFont() != null) {
+                   result = fd.getFont().getStringWidth(string) / 1000f * font.getSize2D();
+                   break;
+                 } else {
+                     XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.RENDER_FONT_IS_NULL);
+                 }
+              }
+            }
         } catch (IllegalArgumentException e2) {
             // PDFont::getStringWidth throws an IllegalArgumentException if the character doesn't exist in the font.
             // So we do it one character by character instead.
             result = getStringWidthSlow(font, string) / 1000f * font.getSize2D();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             throw new PdfContentStreamAdapter.PdfException("getWidth", e);
         }
 
@@ -326,22 +361,6 @@ public class PdfBoxTextRenderer implements TextRenderer {
     }
 
     public void setSmoothingLevel(int level) {
-    }
-
-    public Rectangle getGlyphBounds(OutputDevice outputDevice, FSFont font, FSGlyphVector fsGlyphVector, int index, float x, float y) {
-        throw new UnsupportedOperationException();
-    }
-
-    public float[] getGlyphPositions(OutputDevice outputDevice, FSFont font, FSGlyphVector fsGlyphVector) {
-        throw new UnsupportedOperationException();
-    }
-
-    public FSGlyphVector getGlyphVector(OutputDevice outputDevice, FSFont font, String string) {
-        throw new UnsupportedOperationException();
-    }
-
-    public void drawGlyphVector(OutputDevice outputDevice, FSGlyphVector vector, float x, float y) {
-        throw new UnsupportedOperationException();
     }
 
     @Override
