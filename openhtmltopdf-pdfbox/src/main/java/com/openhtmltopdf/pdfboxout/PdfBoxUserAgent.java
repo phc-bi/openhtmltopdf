@@ -76,7 +76,11 @@ public class PdfBoxUserAgent extends NaiveUserAgent {
             resource = loadEmbeddedBase64ImageResource(uriResolved);
             // see issue 474: getImage can be null, as the loading of the embedded base64 resource may fail.
             if (resource.getImage() != null) {
-                _outputDevice.realizeImage((PdfBoxImage) resource.getImage());
+            	 	try {
+            	 		_outputDevice.realizeImage((PdfBoxImage) resource.getImage());
+            	 	} catch (Exception e) {
+            	 		XRLog.log(Level.WARNING, LogMessageId.LogMessageId0Param.EXCEPTION_CANT_READ_XHTML_EMBEDDED_IMAGE, e);
+            	 	}
                 _imageCache.put(uriResolved, resource);
             }
         } else {
